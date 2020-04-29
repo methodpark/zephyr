@@ -27,6 +27,7 @@ config MINIMAL_LIBC
 config NEWLIB_LIBC
 	bool "Newlib C library"
 	depends on !NATIVE_APPLICATION
+	depends on SSE || !X86
 	help
 	  Build with newlib library. The newlib library is expected to be
 	  part of the SDK in this case.
