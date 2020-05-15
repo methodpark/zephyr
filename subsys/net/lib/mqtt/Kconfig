@@ -6,7 +6,10 @@
 config MQTT_LIB
 	bool "Socket MQTT Library Support"
 	select NET_SOCKETS
-	select NET_SOCKETS_POSIX_NAMES
+	# must be disabled to be compatible woth POSSX_API
+	# would more correct, but introduces cyclic dependency:
+	# depends on POSIX_API || NET_SOCKETS_POSIX_NAMES
+	# select NET_SOCKETS_POSIX_NAMES
 	help
 	  Enable the Zephyr MQTT Library
 
