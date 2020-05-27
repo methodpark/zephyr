@@ -17,7 +17,7 @@ BUILD_ASSERT(PATH_MAX >= MAX_FILE_NAME, "PATH_MAX is less than MAX_FILE_NAME");
 struct posix_fs_desc {
 	union {
 		struct fs_file_t file;
-		struct fs_dir_t	dir;
+		struct fs_dir_t dir;
 	};
 	bool is_dir;
 	bool used;
@@ -92,6 +92,7 @@ int open(const char *name, int flags)
 
 	return fd;
 }
+FUNC_ALIAS(open, _open, int);
 
 static int fs_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 {
@@ -291,6 +292,7 @@ int unlink(const char *path)
 	}
 	return 0;
 }
+FUNC_ALIAS(unlink, _unlink, int);
 
 /**
  * @brief Get file status.
