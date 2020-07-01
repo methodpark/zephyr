@@ -737,12 +737,6 @@ static inline char *inet_ntop(sa_family_t family, const void *src, char *dst,
 #define EAI_SERVICE DNS_EAI_SERVICE
 #endif /* defined(CONFIG_NET_SOCKETS_POSIX_NAMES) */
 
-// workaround to make MQTT lib compile with CONFIG_POSIX_API=y
-#if defined(CONFIG_POSIX_API)
-#include <posix/sys/socket.h>
-#endif
-
-
 /** sockopt: Socket-level option */
 #define SOL_SOCKET 1
 
