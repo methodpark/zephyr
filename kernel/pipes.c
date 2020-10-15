@@ -14,10 +14,8 @@
 #include <kernel_structs.h>
 #include <debug/object_tracing_common.h>
 #include <toolchain.h>
-#include <linker/sections.h>
 #include <ksched.h>
 #include <wait_q.h>
-#include <sys/dlist.h>
 #include <init.h>
 #include <syscall_handler.h>
 #include <kernel_internal.h>
@@ -83,7 +81,7 @@ static void pipe_async_finish(struct k_pipe_async *async_desc)
 /*
  * Do run-time initialization of pipe object subsystem.
  */
-static int init_pipes_module(struct device *dev)
+static int init_pipes_module(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
@@ -550,7 +548,7 @@ int z_pipe_put_internal(struct k_pipe *pipe, struct k_pipe_async *async_desc,
 		 * Lock interrupts and unlock the scheduler before
 		 * manipulating the writers wait_q.
 		 */
-		k_spinlock_key_t key = k_spin_lock(&pipe->lock);
+		k_spinlock_key_t key2 = k_spin_lock(&pipe->lock);
 		z_sched_unlock_no_reschedule();
 
 		async_desc->desc.buffer = data + num_bytes_written;
@@ -559,7 +557,7 @@ int z_pipe_put_internal(struct k_pipe *pipe, struct k_pipe_async *async_desc,
 
 		z_pend_thread((struct k_thread *) &async_desc->thread,
 			     &pipe->wait_q.writers, K_FOREVER);
-		z_reschedule(&pipe->lock, key);
+		z_reschedule(&pipe->lock, key2);
 		return 0;
 	}
 #endif
@@ -575,9 +573,9 @@ int z_pipe_put_internal(struct k_pipe *pipe, struct k_pipe_async *async_desc,
 		 * Lock interrupts and unlock the scheduler before
 		 * manipulating the writers wait_q.
 		 */
-		k_spinlock_key_t key = k_spin_lock(&pipe->lock);
+		k_spinlock_key_t key2 = k_spin_lock(&pipe->lock);
 		z_sched_unlock_no_reschedule();
-		(void)z_pend_curr(&pipe->lock, key,
+		(void)z_pend_curr(&pipe->lock, key2,
 				 &pipe->wait_q.writers, timeout);
 	} else {
 		k_sched_unlock();
@@ -639,7 +637,7 @@ int z_impl_k_pipe_get(struct k_pipe *pipe, void *data, size_t bytes_to_read,
 				  sys_dlist_get(&xfer_list);
 	while ((thread != NULL) && (num_bytes_read < bytes_to_read)) {
 		desc = (struct k_pipe_desc *)thread->base.swap_data;
-		bytes_copied = pipe_xfer((u8_t *)data + num_bytes_read,
+		bytes_copied = pipe_xfer((uint8_t *)data + num_bytes_read,
 					  bytes_to_read - num_bytes_read,
 					  desc->buffer, desc->bytes_to_xfer);
 
@@ -663,7 +661,7 @@ int z_impl_k_pipe_get(struct k_pipe *pipe, void *data, size_t bytes_to_read,
 
 	if ((writer != NULL) && (num_bytes_read < bytes_to_read)) {
 		desc = (struct k_pipe_desc *)writer->base.swap_data;
-		bytes_copied = pipe_xfer((u8_t *)data + num_bytes_read,
+		bytes_copied = pipe_xfer((uint8_t *)data + num_bytes_read,
 					  bytes_to_read - num_bytes_read,
 					  desc->buffer, desc->bytes_to_xfer);
 
@@ -722,15 +720,15 @@ int z_impl_k_pipe_get(struct k_pipe *pipe, void *data, size_t bytes_to_read,
 
 	struct k_pipe_desc  pipe_desc;
 
-	pipe_desc.buffer        = (u8_t *)data + num_bytes_read;
+	pipe_desc.buffer        = (uint8_t *)data + num_bytes_read;
 	pipe_desc.bytes_to_xfer = bytes_to_read - num_bytes_read;
 
 	if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT)) {
 		_current->base.swap_data = &pipe_desc;
-		k_spinlock_key_t key = k_spin_lock(&pipe->lock);
+		k_spinlock_key_t key2 = k_spin_lock(&pipe->lock);
 
 		z_sched_unlock_no_reschedule();
-		(void)z_pend_curr(&pipe->lock, key,
+		(void)z_pend_curr(&pipe->lock, key2,
 				 &pipe->wait_q.readers, timeout);
 	} else {
 		k_sched_unlock();

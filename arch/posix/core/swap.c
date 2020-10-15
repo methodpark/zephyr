@@ -30,6 +30,9 @@ int arch_swap(unsigned int key)
 	 * and so forth.  But we do not need to do so because we use posix
 	 * threads => those are all nicely kept by the native OS kernel
 	 */
+#if CONFIG_TRACING
+	sys_trace_thread_switched_out();
+#endif
 	_current->callee_saved.key = key;
 	_current->callee_saved.retval = -EAGAIN;
 
@@ -47,6 +50,9 @@ int arch_swap(unsigned int key)
 
 
 	_current = _kernel.ready_q.cache;
+#if CONFIG_TRACING
+	sys_trace_thread_switched_in();
+#endif
 
 	/*
 	 * Here a "real" arch would load all processor registers for the thread
@@ -73,10 +79,12 @@ int arch_swap(unsigned int key)
  * Note that we will never come back to this thread: posix_main_thread_start()
  * does never return.
  */
-void arch_switch_to_main_thread(struct k_thread *main_thread,
-				k_thread_stack_t *main_stack,
-				size_t main_stack_size, k_thread_entry_t _main)
+void arch_switch_to_main_thread(struct k_thread *main_thread, char *stack_ptr,
+				k_thread_entry_t _main)
 {
+	ARG_UNUSED(stack_ptr);
+	ARG_UNUSED(_main);
+
 	posix_thread_status_t *ready_thread_ptr =
 			(posix_thread_status_t *)
 			_kernel.ready_q.cache->callee_saved.thread_status;
@@ -98,7 +106,7 @@ void arch_switch_to_main_thread(struct k_thread *main_thread,
 void posix_irq_check_idle_exit(void)
 {
 	if (_kernel.idle) {
-		s32_t idle_val = _kernel.idle;
+		int32_t idle_val = _kernel.idle;
 
 		_kernel.idle = 0;
 		z_sys_power_save_idle_exit(idle_val);

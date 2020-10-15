@@ -54,7 +54,7 @@ struct k_mbox *_trace_list_k_mbox;
 /*
  * Do run-time initialization of mailbox object subsystem.
  */
-static int init_mbox_module(struct device *dev)
+static int init_mbox_module(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
@@ -120,7 +120,7 @@ void k_mbox_init(struct k_mbox *mbox_ptr)
 static int mbox_message_match(struct k_mbox_msg *tx_msg,
 			       struct k_mbox_msg *rx_msg)
 {
-	u32_t temp_info;
+	uint32_t temp_info;
 
 	if (((tx_msg->tx_target_thread == (k_tid_t)K_ANY) ||
 	     (tx_msg->tx_target_thread == rx_msg->tx_target_thread)) &&

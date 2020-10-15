@@ -107,12 +107,12 @@ NET_BUF_POOL_DEFINE(mdm_recv_pool, MDM_RECV_MAX_BUF, MDM_RECV_BUF_SIZE,
 		    0, NULL);
 
 /* RX thread structures */
-K_THREAD_STACK_DEFINE(modem_rx_stack,
+K_KERNEL_STACK_DEFINE(modem_rx_stack,
 		      CONFIG_MODEM_UBLOX_SARA_R4_RX_STACK_SIZE);
 struct k_thread modem_rx_thread;
 
 /* RX thread work queue */
-K_THREAD_STACK_DEFINE(modem_workq_stack,
+K_KERNEL_STACK_DEFINE(modem_workq_stack,
 		      CONFIG_MODEM_UBLOX_SARA_R4_RX_WORKQ_STACK_SIZE);
 static struct k_work_q modem_workq;
 
@@ -121,23 +121,23 @@ struct socket_read_data {
 	char *recv_buf;
 	size_t recv_buf_len;
 	struct sockaddr *recv_addr;
-	u16_t recv_read_len;
+	uint16_t recv_read_len;
 };
 
 /* driver data */
 struct modem_data {
 	struct net_if *net_iface;
-	u8_t mac_addr[6];
+	uint8_t mac_addr[6];
 
 	/* modem interface */
 	struct modem_iface_uart_data iface_data;
-	u8_t iface_isr_buf[MDM_RECV_BUF_SIZE];
-	u8_t iface_rb_buf[MDM_MAX_DATA_LENGTH];
+	uint8_t iface_isr_buf[MDM_RECV_BUF_SIZE];
+	uint8_t iface_rb_buf[MDM_MAX_DATA_LENGTH];
 
 	/* modem cmds */
 	struct modem_cmd_handler_data cmd_handler_data;
-	u8_t cmd_read_buf[MDM_RECV_BUF_SIZE];
-	u8_t cmd_match_buf[MDM_RECV_BUF_SIZE + 1];
+	uint8_t cmd_read_buf[MDM_RECV_BUF_SIZE];
+	uint8_t cmd_match_buf[MDM_RECV_BUF_SIZE + 1];
 
 	/* socket data */
 	struct modem_socket_config socket_config;
@@ -176,7 +176,7 @@ static struct modem_data mdata;
 static struct modem_context mctx;
 
 #if defined(CONFIG_DNS_RESOLVER)
-static struct addrinfo result;
+static struct zsock_addrinfo result;
 static struct sockaddr result_addr;
 static char result_canonname[DNS_MAX_NAME_SIZE + 1];
 #endif
@@ -299,11 +299,12 @@ static ssize_t send_socket_data(struct modem_socket *sock,
 				const struct sockaddr *dst_addr,
 				struct modem_cmd *handler_cmds,
 				size_t handler_cmds_len,
-				const char *buf, size_t buf_len, int timeout)
+				const char *buf, size_t buf_len,
+				k_timeout_t timeout)
 {
 	int ret;
 	char send_buf[sizeof("AT+USO**=#,!###.###.###.###!,#####,####\r\n")];
-	u16_t dst_port = 0U;
+	uint16_t dst_port = 0U;
 
 	if (!sock) {
 		return -EINVAL;
@@ -351,13 +352,13 @@ static ssize_t send_socket_data(struct modem_socket *sock,
 	k_sleep(MDM_PROMPT_CMD_DELAY);
 	mctx.iface.write(&mctx.iface, buf, buf_len);
 
-	if (timeout == K_NO_WAIT) {
+	if (K_TIMEOUT_EQ(timeout, K_NO_WAIT)) {
 		ret = 0;
 		goto exit;
 	}
 
 	k_sem_reset(&mdata.sem_response);
-	ret = k_sem_take(&mdata.sem_response, K_MSEC(timeout));
+	ret = k_sem_take(&mdata.sem_response, timeout);
 
 	if (ret == 0) {
 		ret = modem_cmd_handler_get_error(&mdata.cmd_handler_data);
@@ -576,7 +577,7 @@ MODEM_CMD_DEFINE(on_cmd_sockwrite)
 /* Common code for +USOR[D|F]: "<data>" */
 static int on_cmd_sockread_common(int socket_id,
 				  struct modem_cmd_handler_data *data,
-				  int socket_data_length, u16_t len)
+				  int socket_data_length, uint16_t len)
 {
 	struct modem_socket *sock = NULL;
 	struct socket_read_data *sock_data;
@@ -630,7 +631,7 @@ static int on_cmd_sockread_common(int socket_id,
 	}
 
 	ret = net_buf_linearize(sock_data->recv_buf, sock_data->recv_buf_len,
-				data->rx_buf, 0, (u16_t)socket_data_length);
+				data->rx_buf, 0, (uint16_t)socket_data_length);
 	data->rx_buf = net_buf_skip(data->rx_buf, ret);
 	sock_data->recv_read_len = ret;
 	if (ret != socket_data_length) {
@@ -1148,7 +1149,7 @@ static int create_socket(struct modem_socket *sock, const struct sockaddr *addr)
 	int ret;
 	struct modem_cmd cmd = MODEM_CMD("+USOCR: ", on_cmd_sockcreate, 1U, "");
 	char buf[sizeof("AT+USOCR=#,#####\r")];
-	u16_t local_port = 0U, proto = 6U;
+	uint16_t local_port = 0U, proto = 6U;
 
 	if (addr) {
 		if (addr->sa_family == AF_INET6) {
@@ -1204,8 +1205,9 @@ static int offload_socket(int family, int type, int proto)
 	return ret;
 }
 
-static int offload_close(struct modem_socket *sock)
+static int offload_close(void *obj)
 {
+	struct modem_socket *sock = (struct modem_socket *)obj;
 	char buf[sizeof("AT+USOCL=#\r")];
 	int ret;
 
@@ -1253,7 +1255,7 @@ static int offload_connect(void *obj, const struct sockaddr *addr,
 	struct modem_socket *sock = (struct modem_socket *)obj;
 	int ret;
 	char buf[sizeof("AT+USOCO=#,!###.###.###.###!,#####,#\r")];
-	u16_t dst_port = 0U;
+	uint16_t dst_port = 0U;
 
 	if (!addr) {
 		errno = EINVAL;
@@ -1307,7 +1309,7 @@ static int offload_connect(void *obj, const struct sockaddr *addr,
 }
 
 /* support for POLLIN only for now. */
-static int offload_poll(struct pollfd *fds, int nfds, int msecs)
+static int offload_poll(struct zsock_pollfd *fds, int nfds, int msecs)
 {
 	int i;
 	void *obj;
@@ -1349,7 +1351,7 @@ static ssize_t offload_recvfrom(void *obj, void *buf, size_t len,
 		return -1;
 	}
 
-	if (flags & MSG_PEEK) {
+	if (flags & ZSOCK_MSG_PEEK) {
 		errno = ENOTSUP;
 		return -1;
 	}
@@ -1357,7 +1359,7 @@ static ssize_t offload_recvfrom(void *obj, void *buf, size_t len,
 	next_packet_size = modem_socket_next_packet_size(&mdata.socket_config,
 							 sock);
 	if (!next_packet_size) {
-		if (flags & MSG_DONTWAIT) {
+		if (flags & ZSOCK_MSG_DONTWAIT) {
 			errno = EAGAIN;
 			return -1;
 		}
@@ -1455,10 +1457,6 @@ static ssize_t offload_sendto(void *obj, const void *buf, size_t len,
 static int offload_ioctl(void *obj, unsigned int request, va_list args)
 {
 	switch (request) {
-	/* Handle close specifically. */
-	case ZFD_IOCTL_CLOSE:
-		return offload_close((struct modem_socket *)obj);
-
 	case ZFD_IOCTL_POLL_PREPARE:
 		return -EXDEV;
 
@@ -1531,6 +1529,7 @@ static const struct socket_op_vtable offload_socket_fd_op_vtable = {
 	.fd_vtable = {
 		.read = offload_read,
 		.write = offload_write,
+		.close = offload_close,
 		.ioctl = offload_ioctl,
 	},
 	.bind = offload_bind,
@@ -1559,11 +1558,11 @@ NET_SOCKET_REGISTER(ublox_sara_r4, AF_UNSPEC, offload_is_supported,
  * Later, we can add additional handling if it makes sense.
  */
 static int offload_getaddrinfo(const char *node, const char *service,
-			       const struct addrinfo *hints,
-			       struct addrinfo **res)
+			       const struct zsock_addrinfo *hints,
+			       struct zsock_addrinfo **res)
 {
 	struct modem_cmd cmd = MODEM_CMD("+UDNSRN: ", on_cmd_dns, 1U, ",");
-	u32_t port = 0U;
+	uint32_t port = 0U;
 	int ret;
 	/* DNS command + 128 bytes for domain name parameter */
 	char sendbuf[sizeof("AT+UDNSRN=#,'[]'\r") + 128];
@@ -1579,24 +1578,31 @@ static int offload_getaddrinfo(const char *node, const char *service,
 	result.ai_canonname = result_canonname;
 	result_canonname[0] = '\0';
 
+	if (service) {
+		port = ATOI(service, 0U, "port");
+		if (port < 1 || port > USHRT_MAX) {
+			return DNS_EAI_SERVICE;
+		}
+	}
+
+	if (port > 0U) {
+		/* FIXME: DNS is hard-coded to return only IPv4 */
+		if (result.ai_family == AF_INET) {
+			net_sin(&result_addr)->sin_port = htons(port);
+		}
+	}
+
 	/* check to see if node is an IP address */
 	if (net_addr_pton(result.ai_family, node,
 			  &((struct sockaddr_in *)&result_addr)->sin_addr)
-	    == 1) {
+	    == 0) {
 		*res = &result;
 		return 0;
 	}
 
 	/* user flagged node as numeric host, but we failed net_addr_pton */
 	if (hints && hints->ai_flags & AI_NUMERICHOST) {
-		return EAI_NONAME;
-	}
-
-	if (service) {
-		port = ATOI(service, 0U, "port");
-		if (port < 1 || port > USHRT_MAX) {
-			return EAI_SERVICE;
-		}
+		return DNS_EAI_NONAME;
 	}
 
 	snprintk(sendbuf, sizeof(sendbuf), "AT+UDNSRN=0,\"%s\"", node);
@@ -1607,23 +1613,16 @@ static int offload_getaddrinfo(const char *node, const char *service,
 		return ret;
 	}
 
-	if (port > 0U) {
-		/* FIXME: DNS is hard-coded to return only IPv4 */
-		if (result.ai_family == AF_INET) {
-			net_sin(&result_addr)->sin_port = htons(port);
-		}
-	}
-
 	LOG_DBG("DNS RESULT: %s",
 		log_strdup(net_addr_ntop(result.ai_family,
 					 &net_sin(&result_addr)->sin_addr,
 					 sendbuf, NET_IPV4_ADDR_LEN)));
 
-	*res = (struct addrinfo *)&result;
+	*res = (struct zsock_addrinfo *)&result;
 	return 0;
 }
 
-static void offload_freeaddrinfo(struct addrinfo *res)
+static void offload_freeaddrinfo(struct zsock_addrinfo *res)
 {
 	/* using static result from offload_getaddrinfo() -- no need to free */
 	res = NULL;
@@ -1652,9 +1651,9 @@ static struct net_offload modem_net_offload = {
 };
 
 #define HASH_MULTIPLIER		37
-static u32_t hash32(char *str, int len)
+static uint32_t hash32(char *str, int len)
 {
-	u32_t h = 0;
+	uint32_t h = 0;
 	int i;
 
 	for (i = 0; i < len; ++i) {
@@ -1664,10 +1663,10 @@ static u32_t hash32(char *str, int len)
 	return h;
 }
 
-static inline u8_t *modem_get_mac(struct device *dev)
+static inline uint8_t *modem_get_mac(const struct device *dev)
 {
-	struct modem_data *data = dev->driver_data;
-	u32_t hash_value;
+	struct modem_data *data = dev->data;
+	uint32_t hash_value;
 
 	data->mac_addr[0] = 0x00;
 	data->mac_addr[1] = 0x10;
@@ -1675,15 +1674,15 @@ static inline u8_t *modem_get_mac(struct device *dev)
 	/* use IMEI for mac_addr */
 	hash_value = hash32(mdata.mdm_imei, strlen(mdata.mdm_imei));
 
-	UNALIGNED_PUT(hash_value, (u32_t *)(data->mac_addr + 2));
+	UNALIGNED_PUT(hash_value, (uint32_t *)(data->mac_addr + 2));
 
 	return data->mac_addr;
 }
 
 static void modem_net_iface_init(struct net_if *iface)
 {
-	struct device *dev = net_if_get_device(iface);
-	struct modem_data *data = dev->driver_data;
+	const struct device *dev = net_if_get_device(iface);
+	struct modem_data *data = dev->data;
 
 	/* Direct socket offload used instead of net offload: */
 	iface->if_dev->offload = &modem_net_offload;
@@ -1713,7 +1712,7 @@ static struct modem_cmd unsol_cmds[] = {
 	MODEM_CMD("+CREG: ", on_cmd_socknotifycreg, 1U, ""),
 };
 
-static int modem_init(struct device *dev)
+static int modem_init(const struct device *dev)
 {
 	int ret = 0;
 
@@ -1724,7 +1723,7 @@ static int modem_init(struct device *dev)
 	/* initialize the work queue */
 	k_work_q_start(&modem_workq,
 		       modem_workq_stack,
-		       K_THREAD_STACK_SIZEOF(modem_workq_stack),
+		       K_KERNEL_STACK_SIZEOF(modem_workq_stack),
 		       K_PRIO_COOP(7));
 
 	/* socket config */
@@ -1786,7 +1785,7 @@ static int modem_init(struct device *dev)
 
 	/* start RX thread */
 	k_thread_create(&modem_rx_thread, modem_rx_stack,
-			K_THREAD_STACK_SIZEOF(modem_rx_stack),
+			K_KERNEL_STACK_SIZEOF(modem_rx_stack),
 			(k_thread_entry_t) modem_rx,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 

@@ -170,8 +170,8 @@ out_fp_endif:
     /* Restore previous interrupt disable state (irq_lock key)
      * (We clear the arch.basepri field after restoring state)
      */
-#if (defined(CONFIG_CPU_CORTEX_M0PLUS) || defined(CONFIG_CPU_CORTEX_M0)) && \
-	    _thread_offset_to_basepri > 124
+#if (defined(CONFIG_CPU_CORTEX_M0PLUS) || defined(CONFIG_CPU_CORTEX_M0) || \
+	defined(CONFIG_CPU_CORTEX_M1)) && _thread_offset_to_basepri > 124
     /* Doing it this way since the offset to thread->arch.basepri can in
      * some configurations be larger than the maximum of 124 for ldr/str
      * immediate offsets.
@@ -336,18 +336,6 @@ _thread_irq_disabled:
     bl configure_builtin_stack_guard
     pop {r2, lr}
 #endif /* CONFIG_BUILTIN_STACK_GUARD */
-
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-    push {r0, lr}
-    bl read_timer_end_of_swap
-#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
-    pop {r0, r1}
-    mov lr,r1
-#else
-    pop {r0, lr}
-#endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
-
-#endif /* CONFIG_EXECUTION_BENCHMARKING */
 
 #ifdef CONFIG_TRACING
     /* Register the context switch */

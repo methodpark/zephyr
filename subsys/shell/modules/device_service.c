@@ -21,7 +21,7 @@ extern struct device __device_end[];
 extern struct device __device_SMP_start[];
 #endif
 
-static struct device *levels[] = {
+static const struct device *levels[] = {
 	__device_PRE_KERNEL_1_start,
 	__device_PRE_KERNEL_2_start,
 	__device_POST_KERNEL_start,
@@ -35,11 +35,11 @@ static struct device *levels[] = {
 
 static bool device_get_config_level(const struct shell *shell, int level)
 {
-	struct device *dev;
+	const struct device *dev;
 	bool devices = false;
 
 	for (dev = levels[level]; dev < levels[level+1]; dev++) {
-		if (dev->driver_api != NULL) {
+		if (z_device_ready(dev)) {
 			devices = true;
 
 			shell_fprintf(shell, SHELL_NORMAL, "- %s\n", dev->name);
@@ -85,21 +85,21 @@ static int cmd_device_levels(const struct shell *shell,
 static int cmd_device_list(const struct shell *shell,
 			      size_t argc, char **argv)
 {
-	struct device *dev;
+	const struct device *dev;
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
 	shell_fprintf(shell, SHELL_NORMAL, "devices:\n");
 
 	for (dev = __device_start; dev != __device_end; dev++) {
-		if (dev->driver_api == NULL) {
+		if (!z_device_ready(dev)) {
 			continue;
 		}
 
 		shell_fprintf(shell, SHELL_NORMAL, "- %s", dev->name);
 
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-		u32_t state = DEVICE_PM_ACTIVE_STATE;
+		uint32_t state = DEVICE_PM_ACTIVE_STATE;
 		int err;
 
 		err = device_get_power_state(dev, &state);

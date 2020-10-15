@@ -23,20 +23,20 @@ extern void z_sched_ipi(void);
 
 struct cavs_idc_data {
 	ipm_callback_t	cb;
-	void		*ctx;
+	void		*user_data;
 };
 
-static struct device DEVICE_NAME_GET(cavs_idc);
+DEVICE_DECLARE(cavs_idc);
 static struct cavs_idc_data cavs_idc_device_data;
 
-static void cavs_idc_isr(struct device *dev)
+static void cavs_idc_isr(const struct device *dev)
 {
-	struct cavs_idc_data *drv_data = dev->driver_data;
+	struct cavs_idc_data *drv_data = dev->data;
 
-	u32_t i, id;
+	uint32_t i, id;
 	void *ext;
-	u32_t idctfc;
-	u32_t curr_cpu_id = arch_curr_cpu()->id;
+	uint32_t idctfc;
+	uint32_t curr_cpu_id = arch_curr_cpu()->id;
 #ifdef CONFIG_SCHED_IPI_SUPPORTED
 	bool do_sched_ipi = false;
 #endif
@@ -68,7 +68,7 @@ static void cavs_idc_isr(struct device *dev)
 				ext = UINT_TO_POINTER(
 					idc_read(REG_IDCTEFC(i), curr_cpu_id) &
 					REG_IDCTEFC_MSG_MASK);
-				drv_data->cb(drv_data->ctx, id, ext);
+				drv_data->cb(dev, drv_data->user_data, id, ext);
 			}
 			break;
 		}
@@ -84,12 +84,12 @@ static void cavs_idc_isr(struct device *dev)
 #endif
 }
 
-static int cavs_idc_send(struct device *dev, int wait, u32_t id,
+static int cavs_idc_send(const struct device *dev, int wait, uint32_t id,
 			 const void *data, int size)
 {
-	u32_t curr_cpu_id = arch_curr_cpu()->id;
-	u32_t ext = POINTER_TO_UINT(data);
-	u32_t reg;
+	uint32_t curr_cpu_id = arch_curr_cpu()->id;
+	uint32_t ext = POINTER_TO_UINT(data);
+	uint32_t reg;
 	bool busy;
 	int i;
 
@@ -134,7 +134,7 @@ static int cavs_idc_send(struct device *dev, int wait, u32_t id,
 	return 0;
 }
 
-static int cavs_idc_max_data_size_get(struct device *dev)
+static int cavs_idc_max_data_size_get(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
@@ -149,26 +149,27 @@ static int cavs_idc_max_data_size_get(struct device *dev)
 	return 0;
 }
 
-static u32_t cavs_idc_max_id_val_get(struct device *dev)
+static uint32_t cavs_idc_max_id_val_get(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
 	return IPM_CAVS_IDC_ID_MASK;
 }
 
-static void cavs_idc_register_callback(struct device *dev, ipm_callback_t cb,
-				       void *context)
+static void cavs_idc_register_callback(const struct device *dev,
+				       ipm_callback_t cb,
+				       void *user_data)
 {
-	struct cavs_idc_data *drv_data = dev->driver_data;
+	struct cavs_idc_data *drv_data = dev->data;
 
 	drv_data->cb = cb;
-	drv_data->ctx = context;
+	drv_data->user_data = user_data;
 }
 
-static int cavs_idc_set_enabled(struct device *dev, int enable)
+static int cavs_idc_set_enabled(const struct device *dev, int enable)
 {
 	int i, j;
-	u32_t mask;
+	uint32_t mask;
 
 #ifdef CONFIG_SCHED_IPI_SUPPORTED
 	/* With scheduler IPI, IDC must always be enabled. */
@@ -201,7 +202,7 @@ static int cavs_idc_set_enabled(struct device *dev, int enable)
 	return 0;
 }
 
-static int cavs_idc_init(struct device *dev)
+static int cavs_idc_init(const struct device *dev)
 {
 	IRQ_CONNECT(DT_INST_IRQN(0),
 		    DT_INST_IRQ(0, priority),
@@ -227,7 +228,7 @@ DEVICE_AND_API_INIT(IPM_CAVS_IDC_DEV_NAME,
 		    &cavs_idc_driver_api);
 
 #ifdef CONFIG_SCHED_IPI_SUPPORTED
-static int cavs_idc_smp_init(struct device *dev)
+static int cavs_idc_smp_init(const struct device *dev)
 {
 	/* Enable IDC for scheduler IPI */
 	cavs_idc_set_enabled(dev, 1);

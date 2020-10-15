@@ -20,7 +20,7 @@
 
 set -xe
 
-sanitycheck_options=" --inline-logs -N -v"
+sanitycheck_options=" --inline-logs -N -v --integration"
 export BSIM_OUT_PATH="${BSIM_OUT_PATH:-/opt/bsim/}"
 if [ ! -d "${BSIM_OUT_PATH}" ]; then
         unset BSIM_OUT_PATH
@@ -146,7 +146,8 @@ function west_setup() {
 	pushd ..
 	if [ ! -d .west ]; then
 		west init -l ${git_dir}
-		west update
+		west update 1> west.update.log
+		west forall -c 'git reset --hard HEAD'
 	fi
 	popd
 }
@@ -236,7 +237,7 @@ if [ -n "$main_ci" ]; then
 	$short_git_log
 
 
-	if [ -n "${BSIM_OUT_PATH}" -a -d "${BSIM_OUT_PATH}" -a "$SC" == "full" ]; then
+	if [ -n "${BSIM_OUT_PATH}" -a -d "${BSIM_OUT_PATH}" ]; then
 		echo "Build and run BT simulator tests"
 		# Run BLE tests in simulator on the 1st CI instance:
 		if [ "$matrix" = "1" ]; then
@@ -256,10 +257,10 @@ if [ -n "$main_ci" ]; then
 	fi
 
 	if [ "$SC" == "full" ]; then
-	# Save list of tests to be run
-	${sanitycheck} ${sanitycheck_options} --save-tests test_file_3.txt || exit 1
+		# Save list of tests to be run
+		${sanitycheck} ${sanitycheck_options} --save-tests test_file_3.txt || exit 1
 	else
-	echo "test,arch,platform,status,extra_args,handler,handler_time,ram_size,rom_size" > test_file_3.txt
+		echo "test,arch,platform,status,extra_args,handler,handler_time,ram_size,rom_size" > test_file_3.txt
 	fi
 
 	# Remove headers from all files but the first one to generate one
@@ -268,12 +269,14 @@ if [ -n "$main_ci" ]; then
 	tail -n +2 test_file_1.txt > test_file_1_in.txt
 	cat test_file_3.txt test_file_2_in.txt test_file_1_in.txt > test_file.txt
 
+	echo "+++ run sanitycheck"
+
 	# Run a subset of tests based on matrix size
 	${sanitycheck} ${sanitycheck_options} --load-tests test_file.txt \
 		--subset ${matrix}/${matrix_builds} --retry-failed 3
 
 	# Run module tests on matrix #1
-	if [ "$matrix" = "1" ]; then
+	if [ "$matrix" = "1" -a  "$SC" == "full" ]; then
 		if [ -s module_tests.args ]; then
 			${sanitycheck} ${sanitycheck_options} \
 				+module_tests.args --outdir module_tests

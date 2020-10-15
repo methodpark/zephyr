@@ -11,14 +11,25 @@ menu "Nordic drivers"
 menuconfig NRF_802154_RADIO_DRIVER
 	bool "Enable nRF IEEE 802.15.4 radio driver"
 	depends on HAS_HW_NRF_RADIO_IEEE802154
+	select DYNAMIC_INTERRUPTS
 	help
 	  This option enables nRF IEEE 802.15.4 radio driver in Zephyr. Note,
 	  that beside the radio peripheral itself, this drivers occupies several
 	  other peripherals. A complete list can be found in the hal_nordic
 	  repository, within drivers/nrf_radio_802154/nrf_802154_peripherals.h
-	  file.
+	  file. As the nRF IEEE 802.15.4 radio driver defines IRQ configuration
+	  abstraction layer API and its Zephyr-specific implementation uses dynamic
+	  interrupts, the DYNAMIC_INTERRUPTS switch is selected unconditionally.
 
 if NRF_802154_RADIO_DRIVER
+
+config NRF_802154_MULTIPROTOCOL_SUPPORT
+	bool
+	help
+	  In dynamic multiprotocol applications, access to the radio peripheral
+	  must be distributed by an arbiter. To support this arbitration
+	  in the driver, this option must be enabled. Otherwise, the driver
+	  assumes that access to the radio peripheral is granted indefinitely.
 
 choice NRF_802154_CCA_MODE
 	prompt "nRF IEEE 802.15.4 CCA mode"
@@ -64,7 +75,6 @@ endmenu
 
 config HAS_NRFX
 	bool
-	select HAS_CMSIS_CORE
 
 menu "nrfx drivers"
 	depends on HAS_NRFX
@@ -76,6 +86,10 @@ config NRFX_ADC
 config NRFX_CLOCK
 	bool "Enable CLOCK driver"
 	depends on HAS_HW_NRF_CLOCK
+
+config NRFX_CLOCK_LFXO_TWO_STAGE_ENABLED
+	bool "Enable two stage start sequence of the low frequency clock"
+	depends on NRFX_CLOCK
 
 config NRFX_COMP
 	bool "Enable COMP driver"
@@ -152,6 +166,9 @@ config NRFX_PDM
 config NRFX_POWER
 	bool "Enable POWER driver"
 	depends on HAS_HW_NRF_POWER
+	# On SoCs featuring the USBREG peripheral, the POWER driver uses
+	# internally the USBREG driver.
+	select NRFX_USBREG if HAS_HW_NRF_USBREG
 
 config NRFX_PPI
 	bool "Enable PPI allocator"

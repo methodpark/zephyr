@@ -15,7 +15,7 @@ void k_heap_init(struct k_heap *h, void *mem, size_t bytes)
 	sys_heap_init(&h->heap, mem, bytes);
 }
 
-static int statics_init(struct device *unused)
+static int statics_init(const struct device *unused)
 {
 	ARG_UNUSED(unused);
 	Z_STRUCT_SECTION_FOREACH(k_heap, h) {
@@ -28,7 +28,7 @@ SYS_INIT(statics_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_OBJECTS);
 
 void *k_heap_alloc(struct k_heap *h, size_t bytes, k_timeout_t timeout)
 {
-	s64_t now, end = z_timeout_end_calc(timeout);
+	int64_t now, end = z_timeout_end_calc(timeout);
 	void *ret = NULL;
 	k_spinlock_key_t key = k_spin_lock(&h->lock);
 

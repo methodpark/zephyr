@@ -44,20 +44,6 @@ extern FUNC_NORETURN void z_x86_prep_c(void *arg);
 void z_x86_early_serial_init(void);
 #endif /* CONFIG_X86_VERY_EARLY_CONSOLE */
 
-#ifdef CONFIG_X86_MMU
-/* Create all page tables with boot configuration and enable paging */
-void z_x86_paging_init(void);
-
-static inline struct x86_page_tables *
-z_x86_thread_page_tables_get(struct k_thread *thread)
-{
-#ifdef CONFIG_USERSPACE
-	return thread->arch.ptables;
-#else
-	return &z_x86_kernel_ptables;
-#endif
-}
-#endif /* CONFIG_X86_MMU */
 
 /* Called upon CPU exception that is unhandled and hence fatal; dump
  * interesting info and call z_x86_fatal_error()
@@ -87,7 +73,7 @@ void z_x86_page_fault_handler(z_arch_esf_t *esf);
  * @param cs Code segment of faulting context
  * @return true if addr/size region is not within the thread stack
  */
-bool z_x86_check_stack_bounds(uintptr_t addr, size_t size, u16_t cs);
+bool z_x86_check_stack_bounds(uintptr_t addr, size_t size, uint16_t cs);
 #endif /* CONFIG_THREAD_STACK_INFO */
 
 #ifdef CONFIG_USERSPACE
@@ -101,11 +87,6 @@ extern FUNC_NORETURN void z_x86_userspace_enter(k_thread_entry_t user_entry,
  * Returns the initial entry point to swap into.
  */
 void *z_x86_userspace_prepare_thread(struct k_thread *thread);
-
-void z_x86_thread_pt_init(struct k_thread *thread);
-
-void z_x86_apply_mem_domain(struct x86_page_tables *ptables,
-			    struct k_mem_domain *mem_domain);
 
 #endif /* CONFIG_USERSPACE */
 

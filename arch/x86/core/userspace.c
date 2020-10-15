@@ -9,19 +9,20 @@
 #include <syscall_handler.h>
 #include <kernel_arch_func.h>
 #include <ksched.h>
+#include <x86_mmu.h>
 
 #ifndef CONFIG_X86_KPTI
-/* Change to new set of page tables. ONLY intended for use from
- * z_x88_swap_update_page_tables(). This changes CR3, no memory access
- * afterwards is legal unless it is known for sure that the relevant
- * mappings are identical wrt supervisor mode until we iret out.
+/* Set CR3 to a physical address. There must be a valid top-level paging
+ * structure here or the CPU will triple fault. The incoming page tables must
+ * have the same kernel mappings wrt supervisor mode. Don't use this function
+ * unless you know exactly what you are doing.
  */
-static inline void page_tables_set(struct x86_page_tables *ptables)
+static inline void cr3_set(uintptr_t phys)
 {
 #ifdef CONFIG_X86_64
-	__asm__ volatile("movq %0, %%cr3\n\t" : : "r" (ptables) : "memory");
+	__asm__ volatile("movq %0, %%cr3\n\t" : : "r" (phys) : "memory");
 #else
-	__asm__ volatile("movl %0, %%cr3\n\t" : : "r" (ptables) : "memory");
+	__asm__ volatile("movl %0, %%cr3\n\t" : : "r" (phys) : "memory");
 #endif
 }
 
@@ -43,7 +44,7 @@ static inline void page_tables_set(struct x86_page_tables *ptables)
  */
 void z_x86_swap_update_page_tables(struct k_thread *incoming)
 {
-	struct x86_page_tables *ptables;
+	uintptr_t ptables_phys;
 
 #ifndef CONFIG_X86_64
 	/* 64-bit uses syscall/sysret which switches stacks manually,
@@ -57,10 +58,10 @@ void z_x86_swap_update_page_tables(struct k_thread *incoming)
 	/* Check first that we actually need to do this, since setting
 	 * CR3 involves an expensive full TLB flush.
 	 */
-	ptables = z_x86_thread_page_tables_get(incoming);
+	ptables_phys = incoming->arch.ptables;
 
-	if (ptables != z_x86_page_tables_get()) {
-		page_tables_set(ptables);
+	if (ptables_phys != z_x86_cr3_get()) {
+		cr3_set(ptables_phys);
 	}
 }
 #endif /* CONFIG_X86_KPTI */
@@ -68,13 +69,14 @@ void z_x86_swap_update_page_tables(struct k_thread *incoming)
 FUNC_NORETURN static void drop_to_user(k_thread_entry_t user_entry,
 				       void *p1, void *p2, void *p3)
 {
-	u32_t stack_end;
+	uint32_t stack_end;
 
 	/* Transition will reset stack pointer to initial, discarding
 	 * any old context since this is a one-way operation
 	 */
 	stack_end = Z_STACK_PTR_ALIGN(_current->stack_info.start +
-				     _current->stack_info.size);
+				      _current->stack_info.size -
+				      _current->stack_info.delta);
 
 	z_x86_userspace_enter(user_entry, p1, p2, p3, stack_end,
 			      _current->stack_info.start);
@@ -98,7 +100,7 @@ void *z_x86_userspace_prepare_thread(struct k_thread *thread)
 		z_x86_thread_pt_init(thread);
 		initial_entry = drop_to_user;
 	} else {
-		thread->arch.ptables = &z_x86_kernel_ptables;
+		thread->arch.ptables = (uintptr_t)&z_x86_kernel_ptables;
 		initial_entry = z_thread_entry;
 	}
 
@@ -114,7 +116,7 @@ FUNC_NORETURN void arch_user_mode_enter(k_thread_entry_t user_entry,
 	 * started in user mode already had this done via z_setup_new_thread()
 	 */
 	if (_current->mem_domain_info.mem_domain != NULL) {
-		z_x86_apply_mem_domain(_current->arch.ptables,
+		z_x86_apply_mem_domain(_current,
 				       _current->mem_domain_info.mem_domain);
 	}
 

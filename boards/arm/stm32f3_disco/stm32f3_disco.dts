@@ -127,7 +127,7 @@
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
+	 * https://docs.zephyrproject.org/latest/guides/dts/legacy-macros.html#legacy-flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";
@@ -139,5 +139,16 @@
 			label = "storage";
 			reg = <0x0003e800 0x00001800>;
 		};
+	};
+};
+
+&iwdg {
+	status = "okay";
+};
+
+&timers1 {
+	status = "okay";
+	pwm1: pwm {
+		status = "okay";
 	};
 };

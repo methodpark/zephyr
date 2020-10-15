@@ -67,13 +67,13 @@ pairs:
     Length of time to run test in emulator before automatically killing it.
     Default to 60 seconds.
 
-  arch_whitelist: <list of arches, such as x86, arm, arc>
+  arch_allow: <list of arches, such as x86, arm, arc>
     Set of architectures that this test case should only be run for.
 
   arch_exclude: <list of arches, such as x86, arm, arc>
     Set of architectures that this test case should not run on.
 
-  platform_whitelist: <list of platforms>
+  platform_allow: <list of platforms>
     Set of platforms that this test case should only be run for.
 
   platform_exclude: <list of platforms>
@@ -131,7 +131,7 @@ pairs:
         not (right associative)
         all comparison operators (non-associative)
 
-    arch_whitelist, arch_exclude, platform_whitelist, platform_exclude
+    arch_allow, arch_exclude, platform_allow, platform_exclude
     are all syntactic sugar for these expressions. For instance
 
         arch_exclude = x86 arc
@@ -304,6 +304,10 @@ Artificially long but functional example:
         "--retry-failed", type=int, default=0,
         help="Retry failing tests again, up to the number of times specified.")
 
+    parser.add_argument(
+        "--retry-interval", type=int, default=60,
+        help="Retry failing tests after specified period of time.")
+
     test_xor_subtest = case_select.add_mutually_exclusive_group()
 
     test_xor_subtest.add_argument(
@@ -408,8 +412,10 @@ Artificially long but functional example:
              "run. Intended to be run by CI when tagging an official "
              "release. This database is used as a basis for comparison "
              "when looking for deltas in metrics such as footprint")
-    parser.add_argument("-w", "--warnings-as-errors", action="store_true",
+
+    parser.add_argument("-W", "--disable-warnings-as-errors", action="store_true",
                         help="Treat warning conditions as errors")
+
     parser.add_argument(
         "-v",
         "--verbose",
@@ -434,6 +440,13 @@ Artificially long but functional example:
         action="store_true",
         help="do not update the results of the last run of the sanity "
              "checks")
+
+    parser.add_argument(
+        "-G",
+        "--integration",
+        action="store_true",
+        help="Run integration tests")
+
     case_select.add_argument(
         "-F",
         "--load-tests",
@@ -562,6 +575,10 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
     )
 
     parser.add_argument(
+        "--emulation-only", action="store_true",
+        help="Only build and run emulation platforms")
+
+    parser.add_argument(
         "--device-testing", action="store_true",
         help="Test on device directly. Specify the serial device to "
              "use with the --device-serial option.")
@@ -569,9 +586,21 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
     parser.add_argument(
         "-X", "--fixture", action="append", default=[],
         help="Specify a fixture that a board might support")
-    parser.add_argument(
-        "--device-serial",
-        help="Serial device for accessing the board (e.g., /dev/ttyACM0)")
+
+    serial = parser.add_mutually_exclusive_group()
+    serial.add_argument("--device-serial",
+                        help="""Serial device for accessing the board
+                        (e.g., /dev/ttyACM0)
+                        """)
+
+    serial.add_argument("--device-serial-pty",
+                        help="""Script for controlling pseudoterminal.
+                        Sanitycheck believes that it interacts with a terminal
+                        when it actually interacts with the script.
+
+                        E.g "sanitycheck --device-testing
+                        --device-serial-pty <script>
+                        """)
 
     parser.add_argument("--generate-hardware-map",
                         help="""Probe serial devices connected to this platform
@@ -588,6 +617,11 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
     parser.add_argument("--hardware-map",
                         help="""Load hardware map from a file. This will be used
                         for testing on hardware that is listed in the file.
+                        """)
+
+    parser.add_argument("--pre-script",
+                        help="""specify a pre script. This will be executed
+                        before device handler open serial port and invoke runner.
                         """)
 
     parser.add_argument(
@@ -641,6 +675,14 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
         configuration and when --enable-asan is given.
         """)
 
+    parser.add_argument(
+        "--enable-ubsan", action="store_true",
+        help="""Enable undefined behavior sanitizer to check for undefined
+        behaviour during program execution. It uses an optional runtime library
+        to provide better error diagnostics. This option only works with host
+        binaries such as those generated for the native_posix configuration.
+        """)
+
     parser.add_argument("--enable-coverage", action="store_true",
                         help="Enable code coverage using gcov.")
 
@@ -667,11 +709,18 @@ def main():
     start_time = time.time()
 
     options = parse_arguments()
-
+    previous_results = None
     # Cleanup
     if options.no_clean or options.only_failed or options.test_only:
         if os.path.exists(options.outdir):
             print("Keeping artifacts untouched")
+    elif options.last_metrics:
+        ls = os.path.join(options.outdir, "sanitycheck.csv")
+        if os.path.exists(ls):
+            with open(ls, "r") as fp:
+                previous_results = fp.read()
+        else:
+            sys.exit(f"Can't compare metrics with non existing file {ls}")
     elif os.path.exists(options.outdir):
         if options.clobber_output:
             print("Deleting output directory {}".format(options.outdir))
@@ -684,7 +733,12 @@ def main():
                     shutil.move(options.outdir, new_out)
                     break
 
+    previous_results_file = None
     os.makedirs(options.outdir, exist_ok=True)
+    if options.last_metrics and previous_results:
+        previous_results_file = os.path.join(options.outdir, "baseline.csv")
+        with open(previous_results_file, "w") as fp:
+            fp.write(previous_results)
 
     # create file handler which logs even debug messages
     if options.log_file:
@@ -777,6 +831,7 @@ def main():
     suite.fixtures = options.fixture
     suite.enable_asan = options.enable_asan
     suite.enable_lsan = options.enable_lsan
+    suite.enable_ubsan = options.enable_ubsan
     suite.enable_coverage = options.enable_coverage
     suite.enable_valgrind = options.enable_valgrind
     suite.coverage_platform = options.coverage_platform
@@ -786,6 +841,8 @@ def main():
     suite.west_flash = options.west_flash
     suite.west_runner = options.west_runner
     suite.verbose = VERBOSE
+    suite.warnings_as_errors = not options.disable_warnings_as_errors
+    suite.integration = options.integration
 
     if options.ninja:
         suite.generator_cmd = "ninja"
@@ -821,13 +878,24 @@ def main():
                     if platform['connected']:
                         options.platform.append(platform['platform'])
 
-        elif options.device_serial:  # back-ward compatibility
+        elif options.device_serial or options.device_serial_pty:
             if options.platform and len(options.platform) == 1:
-                hwm.load_device_from_cmdline(options.device_serial, options.platform[0])
+                if options.device_serial:
+                    hwm.load_device_from_cmdline(options.device_serial,
+                                                 options.platform[0],
+                                                 options.pre_script,
+                                                 False)
+                else:
+                    hwm.load_device_from_cmdline(options.device_serial_pty,
+                                                 options.platform[0],
+                                                 options.pre_script,
+                                                 True)
+
                 suite.connected_hardware = hwm.connected_hardware
             else:
-                logger.error("""When --device-testing is used with --device-serial, only one
-                      platform is allowed""")
+                logger.error("""When --device-testing is used with
+                             --device-serial or --device-serial-pty,
+                             only one platform is allowed""")
 
     if suite.load_errors:
         sys.exit(1)
@@ -916,7 +984,6 @@ def main():
             if options.test_tree:
                 for pre, _, node in RenderTree(testsuite):
                     print("%s%s" % (pre, node.name))
-
             return
 
     discards = []
@@ -930,9 +997,11 @@ def main():
         suite.load_from_file(last_run, filter_status=['skipped', 'passed'])
         suite.selected_platforms = set(p.platform.name for p in suite.instances.values())
     elif options.load_tests:
-        suite.load_from_file(options.load_tests)
+        suite.load_from_file(options.load_tests, filter_status=['skipped'])
+        suite.selected_platforms = set(p.platform.name for p in suite.instances.values())
     elif options.test_only:
         suite.load_from_file(last_run, filter_status=['skipped'])
+        suite.selected_platforms = set(p.platform.name for p in suite.instances.values())
     else:
         discards = suite.apply_filters(
             build_only=options.build_only,
@@ -944,6 +1013,7 @@ def main():
             exclude_tag=options.exclude_tag,
             force_toolchain=options.force_toolchain,
             all=options.all,
+            emulation_only=options.emulation_only,
             run_individual_tests=run_individual_tests,
             device_testing=options.device_testing,
             force_platform=options.force_platform
@@ -1004,8 +1074,7 @@ def main():
         return
 
     if options.subset:
-        suite.instances = OrderedDict(sorted(suite.instances.items(),
-                            key=lambda x: x[0][x[0].find("/") + 1:]))
+        suite.instances = OrderedDict(sorted(suite.instances.items()))
 
         subset, sets = options.subset.split("/")
         subset = int(subset)
@@ -1048,7 +1117,7 @@ def main():
     retries = options.retry_failed + 1
     completed = 0
 
-    suite.update()
+    suite.update_counting()
     suite.start_time = start_time
 
     while True:
@@ -1056,21 +1125,34 @@ def main():
 
         if completed > 1:
             logger.info("%d Iteration:" % (completed))
-            time.sleep(60)  # waiting for the system to settle down
+            time.sleep(options.retry_interval)  # waiting for the system to settle down
             suite.total_done = suite.total_tests - suite.total_failed
-            suite.total_failed = 0
+            suite.total_failed = suite.total_errors
 
         suite.execute()
         print("")
 
         retries = retries - 1
-        if retries == 0 or suite.total_failed == 0:
+        if retries == 0 or suite.total_failed == suite.total_errors:
             break
 
-    suite.misc_reports(options.compare_report, options.show_footprint,
-                       options.all_deltas, options.footprint_threshold, options.last_metrics)
+
+    # figure out which report to use for size comparison
+    if options.compare_report:
+        report_to_use = options.compare_report
+    elif options.last_metrics:
+        report_to_use = previous_results_file
+    else:
+        report_to_use = suite.RELEASE_DATA
+
+    suite.footprint_reports(report_to_use,
+                            options.show_footprint,
+                            options.all_deltas,
+                            options.footprint_threshold,
+                            options.last_metrics)
 
     suite.duration = time.time() - start_time
+    suite.update_counting()
     suite.summary(options.disable_unrecognized_section_test)
 
     if options.coverage:

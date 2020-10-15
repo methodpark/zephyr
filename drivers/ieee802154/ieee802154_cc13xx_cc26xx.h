@@ -61,18 +61,18 @@
 struct ieee802154_cc13xx_cc26xx_data {
 	struct net_if *iface;
 
-	u8_t mac[8];
+	uint8_t mac[8];
 
 	struct k_sem fg_done;
 	struct k_sem rx_done;
 
-	K_THREAD_STACK_MEMBER(rx_stack,
+	K_KERNEL_STACK_MEMBER(rx_stack,
 			      CONFIG_IEEE802154_CC13XX_CC26XX_RX_STACK_SIZE);
 	struct k_thread rx_thread;
 
 	dataQueue_t rx_queue;
 	rfc_dataEntryPointer_t rx_entry[CC13XX_CC26XX_RX_BUF_SIZE];
-	u8_t rx_data[CC13XX_CC26XX_NUM_RX_BUF]
+	uint8_t rx_data[CC13XX_CC26XX_NUM_RX_BUF]
 		    [CC13XX_CC26XX_RX_BUF_SIZE] __aligned(4);
 
 	volatile rfc_CMD_IEEE_CCA_REQ_t cmd_ieee_cca_req;

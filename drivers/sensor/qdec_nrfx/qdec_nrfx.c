@@ -22,10 +22,10 @@ LOG_MODULE_REGISTER(qdec_nrfx, CONFIG_SENSOR_LOG_LEVEL);
 
 
 struct qdec_nrfx_data {
-	s32_t                    acc;
+	int32_t                    acc;
 	sensor_trigger_handler_t data_ready_handler;
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-	u32_t                    pm_state;
+	uint32_t                    pm_state;
 #endif
 };
 
@@ -49,7 +49,8 @@ static void accumulate(struct qdec_nrfx_data *data, int16_t acc)
 	irq_unlock(key);
 }
 
-static int qdec_nrfx_sample_fetch(struct device *dev, enum sensor_channel chan)
+static int qdec_nrfx_sample_fetch(const struct device *dev,
+				  enum sensor_channel chan)
 {
 	struct qdec_nrfx_data *data = &qdec_nrfx_data;
 
@@ -71,14 +72,14 @@ static int qdec_nrfx_sample_fetch(struct device *dev, enum sensor_channel chan)
 	return 0;
 }
 
-static int qdec_nrfx_channel_get(struct device       *dev,
+static int qdec_nrfx_channel_get(const struct device *dev,
 				 enum sensor_channel  chan,
 				 struct sensor_value *val)
 {
 	struct qdec_nrfx_data *data = &qdec_nrfx_data;
 	unsigned int key;
-	s32_t acc;
-	const s32_t steps = DT_INST_PROP(0, steps);
+	int32_t acc;
+	const int32_t steps = DT_INST_PROP(0, steps);
 
 	ARG_UNUSED(dev);
 	LOG_DBG("");
@@ -105,7 +106,7 @@ static int qdec_nrfx_channel_get(struct device       *dev,
 	return 0;
 }
 
-static int qdec_nrfx_trigger_set(struct device               *dev,
+static int qdec_nrfx_trigger_set(const struct device *dev,
 				 const struct sensor_trigger *trig,
 				 sensor_trigger_handler_t     handler)
 {
@@ -170,7 +171,7 @@ static void qdec_nrfx_gpio_ctrl(bool enable)
 #endif
 }
 
-static int qdec_nrfx_init(struct device *dev)
+static int qdec_nrfx_init(const struct device *dev)
 {
 	static const nrfx_qdec_config_t config = {
 		.reportper          = NRF_QDEC_REPORTPER_40,
@@ -220,7 +221,7 @@ static int qdec_nrfx_init(struct device *dev)
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
 
 static int qdec_nrfx_pm_get_state(struct qdec_nrfx_data *data,
-				  u32_t                 *state)
+				  uint32_t                 *state)
 {
 	unsigned int key = irq_lock();
 	*state = data->pm_state;
@@ -230,9 +231,9 @@ static int qdec_nrfx_pm_get_state(struct qdec_nrfx_data *data,
 }
 
 static int qdec_nrfx_pm_set_state(struct qdec_nrfx_data *data,
-				  u32_t                  new_state)
+				  uint32_t                  new_state)
 {
-	u32_t old_state;
+	uint32_t old_state;
 	unsigned int key;
 
 	key = irq_lock();
@@ -268,7 +269,8 @@ static int qdec_nrfx_pm_set_state(struct qdec_nrfx_data *data,
 	return 0;
 }
 
-static int qdec_nrfx_pm_control(struct device *dev, u32_t ctrl_command,
+static int qdec_nrfx_pm_control(const struct device *dev,
+				uint32_t ctrl_command,
 				void *context, device_pm_cb cb, void *arg)
 {
 	struct qdec_nrfx_data *data = &qdec_nrfx_data;
@@ -282,7 +284,7 @@ static int qdec_nrfx_pm_control(struct device *dev, u32_t ctrl_command,
 		break;
 
 	case DEVICE_PM_SET_POWER_STATE:
-		err = qdec_nrfx_pm_set_state(data, *((u32_t *)context));
+		err = qdec_nrfx_pm_set_state(data, *((uint32_t *)context));
 		break;
 
 	default:

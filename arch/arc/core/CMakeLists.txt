@@ -2,6 +2,10 @@
 
 zephyr_library()
 
+if(CONFIG_COVERAGE)
+  toolchain_cc_coverage()
+endif()
+
 zephyr_library_sources(
   thread.c
   thread_entry_wrapper.S
@@ -22,7 +26,7 @@ zephyr_library_sources(
 zephyr_library_sources_ifdef(CONFIG_CACHE_FLUSHING cache.c)
 zephyr_library_sources_ifdef(CONFIG_ARC_FIRQ fast_irq.S)
 
-zephyr_library_sources_if_kconfig(irq_offload.c)
+zephyr_library_sources_ifdef(CONFIG_IRQ_OFFLOAD irq_offload.c)
 
 zephyr_library_sources_ifdef(CONFIG_USERSPACE userspace.S)
 zephyr_library_sources_ifdef(CONFIG_ARC_CONNECT arc_connect.c)

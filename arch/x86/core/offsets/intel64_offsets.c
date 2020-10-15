@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef _X86_OFFSETS_INC_
+#define _X86_OFFSETS_INC_
+
 GEN_OFFSET_SYM(_callee_saved_t, rsp);
 GEN_OFFSET_SYM(_callee_saved_t, rbp);
 GEN_OFFSET_SYM(_callee_saved_t, rbx);
@@ -44,9 +47,9 @@ GEN_OFFSET_SYM(x86_cpuboot_t, ready);
 GEN_OFFSET_SYM(x86_cpuboot_t, tr);
 GEN_OFFSET_SYM(x86_cpuboot_t, gs_base);
 GEN_OFFSET_SYM(x86_cpuboot_t, sp);
+GEN_OFFSET_SYM(x86_cpuboot_t, stack_size);
 GEN_OFFSET_SYM(x86_cpuboot_t, fn);
 GEN_OFFSET_SYM(x86_cpuboot_t, arg);
-#ifdef CONFIG_X86_MMU
-GEN_OFFSET_SYM(x86_cpuboot_t, ptables);
-#endif /* CONFIG_X86_MMU */
 GEN_ABSOLUTE_SYM(__X86_CPUBOOT_SIZEOF, sizeof(x86_cpuboot_t));
+
+#endif /* _X86_OFFSETS_INC_ */

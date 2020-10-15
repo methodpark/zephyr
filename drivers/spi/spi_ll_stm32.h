@@ -9,7 +9,7 @@
 
 #include "spi_context.h"
 
-typedef void (*irq_config_func_t)(struct device *port);
+typedef void (*irq_config_func_t)(const struct device *port);
 
 struct spi_stm32_config {
 	struct stm32_pclken pclken;
@@ -20,14 +20,22 @@ struct spi_stm32_config {
 };
 
 #ifdef CONFIG_SPI_STM32_DMA
+
+#define SPI_STM32_DMA_ERROR_FLAG	0x01
+#define SPI_STM32_DMA_RX_DONE_FLAG	0x02
+#define SPI_STM32_DMA_TX_DONE_FLAG	0x04
+#define SPI_STM32_DMA_DONE_FLAG	\
+	(SPI_STM32_DMA_RX_DONE_FLAG | SPI_STM32_DMA_TX_DONE_FLAG)
+
 struct stream {
 	const char *dma_name;
-	u32_t channel; /* stores the channel for dma or mux */
+	const struct device *dma_dev;
+	uint32_t channel; /* stores the channel for dma or mux */
 	struct dma_config dma_cfg;
-	u8_t priority;
+	struct dma_block_config dma_blk_cfg;
+	uint8_t priority;
 	bool src_addr_increment;
 	bool dst_addr_increment;
-	bool transfer_complete;
 	int fifo_threshold;
 };
 #endif
@@ -35,15 +43,14 @@ struct stream {
 struct spi_stm32_data {
 	struct spi_context ctx;
 #ifdef CONFIG_SPI_STM32_DMA
-	struct device *dev_dma_tx;
-	struct device *dev_dma_rx;
+	struct k_sem status_sem;
+	volatile uint32_t status_flags;
 	struct stream dma_rx;
 	struct stream dma_tx;
-	size_t dma_segment_len;
 #endif
 };
 
-static inline u32_t ll_func_tx_is_empty(SPI_TypeDef *spi)
+static inline uint32_t ll_func_tx_is_empty(SPI_TypeDef *spi)
 {
 #ifdef CONFIG_SOC_SERIES_STM32MP1X
 	return LL_SPI_IsActiveFlag_TXP(spi);
@@ -52,7 +59,7 @@ static inline u32_t ll_func_tx_is_empty(SPI_TypeDef *spi)
 #endif
 }
 
-static inline u32_t ll_func_rx_is_not_empty(SPI_TypeDef *spi)
+static inline uint32_t ll_func_rx_is_not_empty(SPI_TypeDef *spi)
 {
 #ifdef CONFIG_SOC_SERIES_STM32MP1X
 	return LL_SPI_IsActiveFlag_RXP(spi);
@@ -123,7 +130,7 @@ static inline void ll_func_disable_int_errors(SPI_TypeDef *spi)
 #endif
 }
 
-static inline u32_t ll_func_spi_is_busy(SPI_TypeDef *spi)
+static inline uint32_t ll_func_spi_is_busy(SPI_TypeDef *spi)
 {
 #ifdef CONFIG_SOC_SERIES_STM32MP1X
 	return (!LL_SPI_IsActiveFlag_MODF(spi) &&

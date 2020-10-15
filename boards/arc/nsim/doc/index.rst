@@ -11,17 +11,19 @@ ARC EM or ARC HS based board including the following features:
 
 * ARC EM or ARC HS processor
 * ARC internal timer
-* a virtual output only console (uart-nsim)
+* a virtual console (ns16550 based UART model)
 
 There are four supported board sub-configurations:
 
 * ``nsim_em`` which includes normal ARC EM features and ARC MPUv2
+* ``nsim_em_em7d_v22`` which includes normal ARC EM features and ARC MPUv2, specially with one register bank and fast irq
 * ``nsim_sem`` which includes secure ARC EM features and ARC MPUv3
 * ``nsim_hs`` which includes base ARC HS features, i.e. w/o PMU and MMU
 * ``nsim_hs_smp`` which includes base ARC HS features in multi-core cluster, still w/o PMU and MMU
 
 For detailed arc features, please refer to
 :zephyr_file:`boards/arc/nsim/support/nsim_em.props`,
+:zephyr_file:`boards/arc/nsim/support/nsim_em7d_v22.props`,
 :zephyr_file:`boards/arc/nsim/support/nsim_sem.props`,
 :zephyr_file:`boards/arc/nsim/support/nsim_hs.props` and
 :zephyr_file:`boards/arc/nsim/support/mdb_hs_smp.args`
@@ -39,7 +41,7 @@ The following hardware features are supported:
 +===========+============+=====+=======+=====+=======================+
 | INT       | on-chip    | Y   | Y     | Y   | interrupt_controller  |
 +-----------+------------+-----+-------+-----+-----------------------+
-| UART      | nsim uart  | Y   | Y     | Y   | serial port-polling   |
+| UART      | ns16550    | Y   | Y     | Y   | serial port           |
 +-----------+------------+-----+-------+-----+-----------------------+
 | TIMER     | on-chip    | Y   | Y     | Y   | system clock          |
 +-----------+------------+-----+-------+-----+-----------------------+

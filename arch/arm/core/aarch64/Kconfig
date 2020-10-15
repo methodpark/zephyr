@@ -7,6 +7,8 @@ config CPU_CORTEX_A
 	bool
 	select CPU_CORTEX
 	select HAS_FLASH_LOAD_OFFSET
+	select USE_SWITCH
+	select USE_SWITCH_SUPPORTED
 	help
 	  This option signifies the use of a CPU of the Cortex-A family.
 
@@ -66,6 +68,7 @@ if CPU_CORTEX_A
 config ARMV8_A
 	bool
 	select ATOMIC_OPERATIONS_BUILTIN
+	select CPU_HAS_MMU
 	help
 	  This option signifies the use of an ARMv8-A processor
 	  implementation.

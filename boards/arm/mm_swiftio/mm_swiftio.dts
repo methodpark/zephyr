@@ -26,7 +26,6 @@
 	sdram0: memory@80000000 {
 		/* Micron MT48LC16M16A2B4-6AIT:G */
 		device_type = "memory";
-		compatible = "mmio-sram";
 		reg = <0x80000000 0x2000000>;
 	};
 
@@ -74,6 +73,5 @@
 
 &usdhc1 {
 	status = "okay";
-	pwr-gpios = <&gpio1 5 GPIO_ACTIVE_HIGH>;
 	cd-gpios = <&gpio2 28 GPIO_ACTIVE_LOW>;
 };

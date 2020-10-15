@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Intel Corporation
+ * Copyright (c) 2016, 2020 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,7 +12,7 @@
 /** TESTPOINT: Statically define and initialize a memory pool*/
 K_MEM_POOL_DEFINE(kmpool, BLK_SIZE_MIN, BLK_SIZE_MAX, BLK_NUM_MAX, BLK_ALIGN);
 
-void tmpool_alloc_free(void *data)
+void tmpool_alloc_free(const void *data)
 {
 	ARG_UNUSED(data);
 	static struct k_mem_block block[BLK_NUM_MIN];
@@ -153,7 +153,7 @@ void test_mpool_alloc_size(void)
 void test_mpool_alloc_timeout(void)
 {
 	static struct k_mem_block block[2 * BLK_NUM_MIN], fblock;
-	s64_t tms;
+	int64_t tms;
 	int nb;
 
 	/* allocate all blocks */
@@ -197,6 +197,10 @@ void test_mpool_alloc_timeout(void)
 
 /**
  * @brief Validate allocation and free from system heap memory pool
+ *
+ * @details System shall support assigning the common system heap
+ * as its memory pool, also the kernel shall support freeing memory drawn
+ * from a thread's resource pool.
  *
  * @see k_thread_system_pool_assign(), z_thread_malloc(), k_free()
  */

@@ -18,10 +18,10 @@
 LOG_MODULE_DECLARE(lis2dh, CONFIG_SENSOR_LOG_LEVEL);
 #include "lis2dh.h"
 
-static inline void setup_int1(struct device *dev,
+static inline void setup_int1(const struct device *dev,
 			      bool enable)
 {
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	struct lis2dh_data *lis2dh = dev->data;
 
 	gpio_pin_interrupt_configure(lis2dh->gpio_int1,
 				     LIS2DH_INT1_GPIOS_PIN,
@@ -30,10 +30,11 @@ static inline void setup_int1(struct device *dev,
 				     : GPIO_INT_DISABLE);
 }
 
-static int lis2dh_trigger_drdy_set(struct device *dev, enum sensor_channel chan,
+static int lis2dh_trigger_drdy_set(const struct device *dev,
+				   enum sensor_channel chan,
 				   sensor_trigger_handler_t handler)
 {
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	struct lis2dh_data *lis2dh = dev->data;
 	int status;
 
 	setup_int1(dev, false);
@@ -64,12 +65,12 @@ static int lis2dh_trigger_drdy_set(struct device *dev, enum sensor_channel chan,
 	return 0;
 }
 
-static int lis2dh_start_trigger_int1(struct device *dev)
+static int lis2dh_start_trigger_int1(const struct device *dev)
 {
 	int status;
-	u8_t raw[LIS2DH_BUF_SZ];
-	u8_t ctrl1 = 0U;
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	uint8_t raw[LIS2DH_BUF_SZ];
+	uint8_t ctrl1 = 0U;
+	struct lis2dh_data *lis2dh = dev->data;
 
 	/* power down temporarily to align interrupt & data output sampling */
 	status = lis2dh->hw_tf->read_reg(dev, LIS2DH_REG_CTRL1, &ctrl1);
@@ -109,10 +110,10 @@ static int lis2dh_start_trigger_int1(struct device *dev)
 #define LIS2DH_ANYM_CFG (LIS2DH_INT_CFG_ZHIE_ZUPE | LIS2DH_INT_CFG_YHIE_YUPE |\
 			 LIS2DH_INT_CFG_XHIE_XUPE)
 
-static inline void setup_int2(struct device *dev,
+static inline void setup_int2(const struct device *dev,
 			      bool enable)
 {
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	struct lis2dh_data *lis2dh = dev->data;
 
 	gpio_pin_interrupt_configure(lis2dh->gpio_int2,
 				     LIS2DH_INT2_GPIOS_PIN,
@@ -121,12 +122,12 @@ static inline void setup_int2(struct device *dev,
 				     : GPIO_INT_DISABLE);
 }
 
-static int lis2dh_trigger_anym_set(struct device *dev,
+static int lis2dh_trigger_anym_set(const struct device *dev,
 				   sensor_trigger_handler_t handler)
 {
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	struct lis2dh_data *lis2dh = dev->data;
 	int status;
-	u8_t reg_val;
+	uint8_t reg_val;
 
 	setup_int2(dev, false);
 
@@ -156,9 +157,9 @@ static int lis2dh_trigger_anym_set(struct device *dev,
 	return 0;
 }
 
-static int lis2dh_start_trigger_int2(struct device *dev)
+static int lis2dh_start_trigger_int2(const struct device *dev)
 {
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	struct lis2dh_data *lis2dh = dev->data;
 
 	setup_int2(dev, true);
 
@@ -167,7 +168,7 @@ static int lis2dh_start_trigger_int2(struct device *dev)
 }
 #endif /* DT_INST_PROP_HAS_IDX(0, irq_gpios, 1) */
 
-int lis2dh_trigger_set(struct device *dev,
+int lis2dh_trigger_set(const struct device *dev,
 		       const struct sensor_trigger *trig,
 		       sensor_trigger_handler_t handler)
 {
@@ -183,15 +184,16 @@ int lis2dh_trigger_set(struct device *dev,
 	return -ENOTSUP;
 }
 
-int lis2dh_acc_slope_config(struct device *dev, enum sensor_attribute attr,
+int lis2dh_acc_slope_config(const struct device *dev,
+			    enum sensor_attribute attr,
 			    const struct sensor_value *val)
 {
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	struct lis2dh_data *lis2dh = dev->data;
 	int status;
 
 	if (attr == SENSOR_ATTR_SLOPE_TH) {
-		u8_t range_g, reg_val;
-		u32_t slope_th_ums2;
+		uint8_t range_g, reg_val;
+		uint32_t slope_th_ums2;
 
 		status = lis2dh->hw_tf->read_reg(dev, LIS2DH_REG_CTRL4,
 						 &reg_val);
@@ -236,8 +238,8 @@ int lis2dh_acc_slope_config(struct device *dev, enum sensor_attribute attr,
 	return status;
 }
 
-static void lis2dh_gpio_int1_callback(struct device *dev,
-				      struct gpio_callback *cb, u32_t pins)
+static void lis2dh_gpio_int1_callback(const struct device *dev,
+				      struct gpio_callback *cb, uint32_t pins)
 {
 	struct lis2dh_data *lis2dh =
 		CONTAINER_OF(cb, struct lis2dh_data, gpio_int1_cb);
@@ -254,8 +256,8 @@ static void lis2dh_gpio_int1_callback(struct device *dev,
 }
 
 #if DT_INST_PROP_HAS_IDX(0, irq_gpios, 1)
-static void lis2dh_gpio_int2_callback(struct device *dev,
-				      struct gpio_callback *cb, u32_t pins)
+static void lis2dh_gpio_int2_callback(const struct device *dev,
+				      struct gpio_callback *cb, uint32_t pins)
 {
 	struct lis2dh_data *lis2dh =
 		CONTAINER_OF(cb, struct lis2dh_data, gpio_int2_cb);
@@ -272,10 +274,9 @@ static void lis2dh_gpio_int2_callback(struct device *dev,
 }
 #endif /* DT_INST_PROP_HAS_IDX(0, irq_gpios, 1) */
 
-static void lis2dh_thread_cb(void *arg)
+static void lis2dh_thread_cb(const struct device *dev)
 {
-	struct device *dev = arg;
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	struct lis2dh_data *lis2dh = dev->data;
 	int status;
 
 	if (unlikely(atomic_test_and_clear_bit(&lis2dh->trig_flags,
@@ -321,7 +322,7 @@ static void lis2dh_thread_cb(void *arg)
 			.type = SENSOR_TRIG_DELTA,
 			.chan = lis2dh->chan_drdy,
 		};
-		u8_t reg_val;
+		uint8_t reg_val;
 
 		/* clear interrupt 2 to de-assert int2 line */
 		status = lis2dh->hw_tf->read_reg(dev, LIS2DH_REG_INT2_SRC,
@@ -344,17 +345,11 @@ static void lis2dh_thread_cb(void *arg)
 }
 
 #ifdef CONFIG_LIS2DH_TRIGGER_OWN_THREAD
-static void lis2dh_thread(void *arg1, void *unused2, void *unused3)
+static void lis2dh_thread(struct lis2dh_data *lis2dh)
 {
-	struct device *dev = arg1;
-	struct lis2dh_data *lis2dh = dev->driver_data;
-
-	ARG_UNUSED(unused2);
-	ARG_UNUSED(unused3);
-
 	while (1) {
 		k_sem_take(&lis2dh->gpio_sem, K_FOREVER);
-		lis2dh_thread_cb(dev);
+		lis2dh_thread_cb(lis2dh->dev);
 	}
 }
 #endif
@@ -369,12 +364,12 @@ static void lis2dh_work_cb(struct k_work *work)
 }
 #endif
 
-int lis2dh_init_interrupt(struct device *dev)
+int lis2dh_init_interrupt(const struct device *dev)
 {
-	struct lis2dh_data *lis2dh = dev->driver_data;
+	struct lis2dh_data *lis2dh = dev->data;
 	int status;
 #if DT_INST_PROP_HAS_IDX(0, irq_gpios, 1)
-	u8_t raw[2];
+	uint8_t raw[2];
 #endif
 
 	/* setup data ready gpio interrupt */
@@ -385,17 +380,18 @@ int lis2dh_init_interrupt(struct device *dev)
 		return -EINVAL;
 	}
 
+	lis2dh->dev = dev;
+
 #if defined(CONFIG_LIS2DH_TRIGGER_OWN_THREAD)
 	k_sem_init(&lis2dh->gpio_sem, 0, UINT_MAX);
 
 	k_thread_create(&lis2dh->thread, lis2dh->thread_stack,
 			CONFIG_LIS2DH_THREAD_STACK_SIZE,
-			(k_thread_entry_t)lis2dh_thread, dev, NULL, NULL,
+			(k_thread_entry_t)lis2dh_thread, lis2dh, NULL, NULL,
 			K_PRIO_COOP(CONFIG_LIS2DH_THREAD_PRIORITY), 0,
 			K_NO_WAIT);
 #elif defined(CONFIG_LIS2DH_TRIGGER_GLOBAL_THREAD)
 	lis2dh->work.handler = lis2dh_work_cb;
-	lis2dh->dev = dev;
 #endif
 
 	/* data ready int1 gpio configuration */

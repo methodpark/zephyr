@@ -165,6 +165,14 @@ do {                                                                    \
 			__attribute__((long_call, section(".ramfunc")))
 #endif /* !CONFIG_XIP */
 
+#ifndef __fallthrough
+#if __GNUC__ >= 7
+#define __fallthrough        __attribute__((fallthrough))
+#else
+#define __fallthrough
+#endif	/* __GNUC__ >= 7 */
+#endif
+
 #ifndef __packed
 #define __packed        __attribute__((__packed__))
 #endif
@@ -441,7 +449,7 @@ do {                                                                    \
  * @note Macro has limited usage compared to the standard macro as it cannot be
  *	 used:
  *	 - to generate constant integer, e.g. __aligned(Z_MAX(4,5))
- *	 - static variable, e.g. array like static u8_t array[Z_MAX(...)];
+ *	 - static variable, e.g. array like static uint8_t array[Z_MAX(...)];
  */
 #define Z_MAX(a, b) ({ \
 		/* random suffix to avoid naming conflict */ \
@@ -461,6 +469,22 @@ do {                                                                    \
 		__typeof__(b) _value_b_ = (b); \
 		_value_a_ < _value_b_ ? _value_a_ : _value_b_; \
 	})
+
+/**
+ * @brief Calculate power of two ceiling for some nonzero value
+ *
+ * @param x Nonzero unsigned long value
+ * @return X rounded up to the next power of two
+ */
+#ifdef CONFIG_64BIT
+#define Z_POW2_CEIL(x) ((1UL << (63U - __builtin_clzl(x))) < x ?  \
+		1UL << (63U - __builtin_clzl(x) + 1U) : \
+		1UL << (63U - __builtin_clzl(x)))
+#else
+#define Z_POW2_CEIL(x) ((1UL << (31U - __builtin_clzl(x))) < x ?  \
+		1UL << (31U - __builtin_clzl(x) + 1U) : \
+		1UL << (31U - __builtin_clzl(x)))
+#endif
 
 #endif /* !_LINKER */
 #endif /* ZEPHYR_INCLUDE_TOOLCHAIN_GCC_H_ */

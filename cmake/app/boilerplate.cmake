@@ -9,10 +9,10 @@
 # one of those lines:
 #
 # find_package(Zephyr)
-# find_package(Zephyr HINTS $ENV{ZEPHYR_BASE})
+# find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 #
-# The `HINTS $ENV{ZEPHYR_BASE}` variant is required for any application inside
-# the Zephyr repository.
+# The `REQUIRED HINTS $ENV{ZEPHYR_BASE}` variant is required for any application
+# inside the Zephyr repository.
 #
 # It exists to reduce boilerplate code that Zephyr expects to be in
 # application CMakeLists.txt code.
@@ -75,6 +75,27 @@ message(STATUS "Application: ${APPLICATION_SOURCE_DIR}")
 
 add_custom_target(code_data_relocation_target)
 
+# The zephyr/runners.yaml file in the build directory is used to
+# configure the scripts/west_commands/runners Python package used
+# by 'west flash', 'west debug', etc.
+#
+# This is a helper target for setting property:value pairs related to
+# this file:
+#
+# Property         Description
+# --------------   --------------------------------------------------
+# bin_file         "zephyr.bin" file for flashing
+# hex_file         "zephyr.hex" file for flashing
+# elf_file         "zephyr.elf" file for flashing or debugging
+# yaml_contents    generated contents of runners.yaml
+#
+# Note: there are quotes around "zephyr.bin" etc. because the actual
+# paths can be changed, e.g. to flash signed versions of these files
+# for consumption by bootloaders such as MCUboot.
+#
+# See cmake/flash/CMakeLists.txt for more details.
+add_custom_target(runners_yaml_props_target)
+
 # CMake's 'project' concept has proven to not be very useful for Zephyr
 # due in part to how Zephyr is organized and in part to it not fitting well
 # with cross compilation.
@@ -88,6 +109,8 @@ set(ENV_ZEPHYR_BASE $ENV{ZEPHYR_BASE})
 if((NOT DEFINED ZEPHYR_BASE) AND (DEFINED ENV_ZEPHYR_BASE))
   set(ZEPHYR_BASE ${ENV_ZEPHYR_BASE} CACHE PATH "Zephyr base")
 endif()
+
+find_package(ZephyrBuildConfiguration NAMES ZephyrBuild PATHS ${ZEPHYR_BASE}/../* QUIET NO_DEFAULT_PATH NO_POLICY_SCOPE)
 
 # Note any later project() resets PROJECT_SOURCE_DIR
 file(TO_CMAKE_PATH "${ZEPHYR_BASE}" PROJECT_SOURCE_DIR)
@@ -113,8 +136,18 @@ include(${ZEPHYR_BASE}/cmake/version.cmake)  # depends on hex.cmake
 #
 
 include(${ZEPHYR_BASE}/cmake/python.cmake)
+include(${ZEPHYR_BASE}/cmake/west.cmake)
 include(${ZEPHYR_BASE}/cmake/git.cmake)  # depends on version.cmake
 include(${ZEPHYR_BASE}/cmake/ccache.cmake)
+
+#
+# Find Zephyr modules.
+# Those may contain additional DTS, BOARD, SOC, ARCH ROOTs.
+# Also create the Kconfig binary dir for generated Kconf files.
+#
+set(KCONFIG_BINARY_DIR ${CMAKE_BINARY_DIR}/Kconfig)
+file(MAKE_DIRECTORY ${KCONFIG_BINARY_DIR})
+include(${ZEPHYR_BASE}/cmake/zephyr_module.cmake)
 
 if(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
   message(FATAL_ERROR "Source directory equals build directory.\
@@ -272,19 +305,25 @@ set(CACHED_SHIELD ${SHIELD} CACHE STRING "Selected shield")
 
 # 'BOARD_ROOT' is a prioritized list of directories where boards may
 # be found. It always includes ${ZEPHYR_BASE} at the lowest priority.
+zephyr_file(APPLICATION_ROOT BOARD_ROOT)
 list(APPEND BOARD_ROOT ${ZEPHYR_BASE})
 
-if(NOT SOC_ROOT)
-  set(SOC_DIR ${ZEPHYR_BASE}/soc)
-else()
-  set(SOC_DIR ${SOC_ROOT}/soc)
-endif()
+# 'SOC_ROOT' is a prioritized list of directories where socs may be
+# found. It always includes ${ZEPHYR_BASE}/soc at the lowest priority.
+zephyr_file(APPLICATION_ROOT SOC_ROOT)
+list(APPEND SOC_ROOT ${ZEPHYR_BASE})
 
-if(NOT ARCH_ROOT)
-  set(ARCH_DIR ${ZEPHYR_BASE}/arch)
-else()
-  set(ARCH_DIR ${ARCH_ROOT}/arch)
+# 'ARCH_ROOT' is a prioritized list of directories where archs may be
+# found. It always includes ${ZEPHYR_BASE} at the lowest priority.
+zephyr_file(APPLICATION_ROOT ARCH_ROOT)
+list(APPEND ARCH_ROOT ${ZEPHYR_BASE})
+
+if(DEFINED SHIELD)
+  string(REPLACE " " ";" SHIELD_AS_LIST "${SHIELD}")
 endif()
+# SHIELD-NOTFOUND is a real CMake list, from which valid shields can be popped.
+# After processing all shields, only invalid shields will be left in this list.
+set(SHIELD-NOTFOUND ${SHIELD_AS_LIST})
 
 # Use BOARD to search for a '_defconfig' file.
 # e.g. zephyr/boards/arm/96b_carbon_nrf51/96b_carbon_nrf51_defconfig.
@@ -312,9 +351,6 @@ foreach(root ${BOARD_ROOT})
   endif()
 
   set(shield_dir ${root}/boards/shields)
-  if(DEFINED SHIELD)
-     string(REPLACE " " ";" SHIELD_AS_LIST "${SHIELD}")
-  endif()
   # Match the .overlay files in the shield directories to make sure we are
   # finding shields, e.g. x_nucleo_iks01a1/x_nucleo_iks01a1.overlay
   file(GLOB_RECURSE shields_refs_list
@@ -326,6 +362,7 @@ foreach(root ${BOARD_ROOT})
   # x_nucleo_iks01a1/x_nucleo_iks01a1.overlay;x_nucleo_iks01a2/x_nucleo_iks01a2.overlay
   # we construct a list of shield names by extracting file name and
   # removing the extension.
+  unset(SHIELD_LIST)
   foreach(shield_path ${shields_refs_list})
     get_filename_component(shield ${shield_path} NAME_WE)
     list(APPEND SHIELD_LIST ${shield})
@@ -338,21 +375,10 @@ foreach(root ${BOARD_ROOT})
         continue()
       endif()
 
-      list(REMOVE_ITEM SHIELD ${s})
+      list(REMOVE_ITEM SHIELD-NOTFOUND ${s})
 
       list(GET shields_refs_list ${_idx} s_path)
       get_filename_component(s_dir ${s_path} DIRECTORY)
-
-      # if shield config flag is on, add shield overlay to the shield overlays
-      # list and dts_fixup file to the shield fixup file
-      list(APPEND
-        shield_dts_files
-        ${shield_dir}/${s_path}
-        )
-      list(APPEND
-        shield_dts_fixups
-        ${shield_dir}/${s_dir}/dts_fixup.h
-        )
 
       # search for shield/boards/board.overlay file
       if(EXISTS ${shield_dir}/${s_dir}/boards/${BOARD}.overlay)
@@ -371,6 +397,17 @@ foreach(root ${BOARD_ROOT})
           ${shield_dir}/${s_dir}/boards/${s}/${BOARD}.overlay
           )
       endif()
+
+      # if shield config flag is on, add shield overlay to the shield overlays
+      # list and dts_fixup file to the shield fixup file
+      list(APPEND
+        shield_dts_files
+        ${shield_dir}/${s_path}
+        )
+      list(APPEND
+        shield_dts_fixups
+        ${shield_dir}/${s_dir}/dts_fixup.h
+        )
 
       # search for shield/shield.conf file
       if(EXISTS ${shield_dir}/${s_dir}/${s}.conf)
@@ -409,8 +446,8 @@ if(NOT BOARD_DIR)
   message(FATAL_ERROR "Invalid usage")
 endif()
 
-if(DEFINED SHIELD AND NOT (SHIELD STREQUAL ""))
-  foreach (s ${SHIELD})
+if(DEFINED SHIELD AND NOT (SHIELD-NOTFOUND STREQUAL ""))
+  foreach (s ${SHIELD-NOTFOUND})
     message("No shield named '${s}' found")
   endforeach()
   print_usage()
@@ -422,10 +459,51 @@ get_filename_component(BOARD_ARCH_DIR ${BOARD_DIR}      DIRECTORY)
 get_filename_component(BOARD_FAMILY   ${BOARD_DIR}      NAME)
 get_filename_component(ARCH           ${BOARD_ARCH_DIR} NAME)
 
-if(CONF_FILE)
+foreach(root ${ARCH_ROOT})
+  if(EXISTS ${root}/arch/${ARCH}/CMakeLists.txt)
+    set(ARCH_DIR ${root}/arch)
+    break()
+  endif()
+endforeach()
+
+if(NOT ARCH_DIR)
+  message(FATAL_ERROR "Could not find ARCH=${ARCH} for BOARD=${BOARD}, \
+please check your installation. ARCH roots searched: \n\
+${ARCH_ROOT}")
+endif()
+
+if(DEFINED CONF_FILE)
+  # This ensures that CACHE{CONF_FILE} will be set correctly to current scope
+  # variable CONF_FILE. An already current scope variable will stay the same.
+  set(CONF_FILE ${CONF_FILE})
+
   # CONF_FILE has either been specified on the cmake CLI or is already
   # in the CMakeCache.txt. This has precedence over the environment
   # variable CONF_FILE and the default prj.conf
+
+  # In order to support a `prj_<name>.conf pattern for auto inclusion of board
+  # overlays, then we must first ensure only a single conf file is provided.
+  string(REPLACE " " ";" CONF_FILE_AS_LIST "${CONF_FILE}")
+  list(LENGTH CONF_FILE_AS_LIST CONF_FILE_LENGTH)
+  if(${CONF_FILE_LENGTH} EQUAL 1)
+    # Need the file name to look for match.
+    # Need path in order to check if it is absolute.
+    get_filename_component(CONF_FILE_NAME ${CONF_FILE} NAME)
+    get_filename_component(CONF_FILE_DIR ${CONF_FILE} DIRECTORY)
+    if(${CONF_FILE} MATCHES "prj_(.*).conf")
+      if(NOT IS_ABSOLUTE ${CONF_FILE_DIR})
+        set(CONF_FILE_DIR ${APPLICATION_SOURCE_DIR}/${CONF_FILE_DIR})
+      endif()
+      if(EXISTS ${CONF_FILE_DIR}/boards/${BOARD}_${CMAKE_MATCH_1}.conf)
+        list(APPEND CONF_FILE ${CONF_FILE_DIR}/boards/${BOARD}_${CMAKE_MATCH_1}.conf)
+      endif()
+    endif()
+  endif()
+elseif(CACHED_CONF_FILE)
+  # Cached conf file is present.
+  # That value has precedence over anything else than a new
+  # `cmake -DCONF_FILE=<file>` invocation.
+  set(CONF_FILE ${CACHED_CONF_FILE})
 elseif(DEFINED ENV{CONF_FILE})
   set(CONF_FILE $ENV{CONF_FILE})
 
@@ -443,10 +521,13 @@ elseif(EXISTS   ${APPLICATION_SOURCE_DIR}/prj.conf)
   set(CONF_FILE ${APPLICATION_SOURCE_DIR}/prj.conf)
 endif()
 
-set(CONF_FILE ${CONF_FILE} CACHE STRING "If desired, you can build the application using\
+set(CACHED_CONF_FILE ${CONF_FILE} CACHE STRING "If desired, you can build the application using\
 the configuration settings specified in an alternate .conf file using this parameter. \
 These settings will override the settings in the application’s .config file or its default .conf file.\
-Multiple files may be listed, e.g. CONF_FILE=\"prj1.conf prj2.conf\"")
+Multiple files may be listed, e.g. CONF_FILE=\"prj1.confi;prj2.conf\" \
+The CACHED_CONF_FILE is internal Zephyr variable used between CMake runs. \
+To change CONF_FILE, use the CONF_FILE variable.")
+unset(CONF_FILE CACHE)
 
 if(ZEPHYR_EXTRA_MODULES)
   # ZEPHYR_EXTRA_MODULES has either been specified on the cmake CLI or is
@@ -476,6 +557,13 @@ alternate .overlay file using this parameter. These settings will override the \
 settings in the board's .dts file. Multiple files may be listed, e.g. \
 DTC_OVERLAY_FILE=\"dts1.overlay dts2.overlay\"")
 
+# Populate USER_CACHE_DIR with a directory that user applications may
+# write cache files to.
+if(NOT DEFINED USER_CACHE_DIR)
+  find_appropriate_cache_directory(USER_CACHE_DIR)
+endif()
+message(STATUS "Cache files will be written to: ${USER_CACHE_DIR}")
+
 # Prevent CMake from testing the toolchain
 set(CMAKE_C_COMPILER_FORCED   1)
 set(CMAKE_CXX_COMPILER_FORCED 1)
@@ -498,7 +586,6 @@ include(${BOARD_DIR}/pre_dt_board.cmake OPTIONAL)
 # preprocess DT sources, and then, after we have finished processing
 # both DT and Kconfig we complete the target-specific configuration,
 # and possibly change the toolchain.
-include(${ZEPHYR_BASE}/cmake/zephyr_module.cmake)
 include(${ZEPHYR_BASE}/cmake/generic_toolchain.cmake)
 include(${ZEPHYR_BASE}/cmake/dts.cmake)
 include(${ZEPHYR_BASE}/cmake/kconfig.cmake)
@@ -513,10 +600,31 @@ else()
   set(SOC_PATH ${SOC_FAMILY}/${SOC_SERIES})
 endif()
 
+# Use SOC to search for a 'CMakeLists.txt' file.
+# e.g. zephyr/soc/xtense/intel_apl_adsp/CMakeLists.txt.
+foreach(root ${SOC_ROOT})
+  if(EXISTS ${root}/soc/${ARCH}/${SOC_PATH})
+    set(SOC_DIR ${root}/soc)
+    break()
+  endif()
+endforeach()
+
+if(NOT SOC_DIR)
+  message(FATAL_ERROR "Could not find SOC=${SOC_NAME} for BOARD=${BOARD}, \
+please check your installation. SOC roots searched: \n\
+${SOC_ROOT}")
+endif()
+
 include(${ZEPHYR_BASE}/cmake/target_toolchain.cmake)
 
 project(Zephyr-Kernel VERSION ${PROJECT_VERSION})
 enable_language(C CXX ASM)
+# The setup / configuration of the toolchain itself and the configuration of
+# supported compilation flags are now split, as this allows to use the toolchain
+# for generic purposes, for example DTS, and then test the toolchain for
+# supported flags at stage two.
+# Testing the toolchain flags requires the enable_language() to have been called in CMake.
+include(${ZEPHYR_BASE}/cmake/target_toolchain_flags.cmake)
 
 # 'project' sets PROJECT_BINARY_DIR to ${CMAKE_CURRENT_BINARY_DIR},
 # but for legacy reasons we need it to be set to
@@ -535,13 +643,6 @@ set(KERNEL_S19_NAME   ${KERNEL_NAME}.s19)
 set(KERNEL_EXE_NAME   ${KERNEL_NAME}.exe)
 set(KERNEL_STAT_NAME  ${KERNEL_NAME}.stat)
 set(KERNEL_STRIP_NAME ${KERNEL_NAME}.strip)
-
-# Populate USER_CACHE_DIR with a directory that user applications may
-# write cache files to.
-if(NOT DEFINED USER_CACHE_DIR)
-  find_appropriate_cache_directory(USER_CACHE_DIR)
-endif()
-message(STATUS "Cache files will be written to: ${USER_CACHE_DIR}")
 
 include(${BOARD_DIR}/board.cmake OPTIONAL)
 
@@ -578,6 +679,8 @@ endif()
 #
 # Currently used properties:
 # - COMPILES_OPTIONS: Used by application memory partition feature
+# - ${TARGET}_DEPENDENCIES: additional dependencies for targets that need them
+#   like flash (FLASH_DEPENDENCIES), debug (DEBUG_DEPENDENCIES), etc.
 add_custom_target(zephyr_property_target)
 
 # "app" is a CMake library containing all the application code and is

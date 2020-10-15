@@ -51,9 +51,12 @@
 	#define RAMABLE_REGION RAM
 #endif
 
-#ifdef CONFIG_X86_MMU
-	#define MMU_PAGE_SIZE	KB(4)
-	#define MMU_PAGE_ALIGN	. = ALIGN(MMU_PAGE_SIZE);
+/* Used to align areas with separate memory permission characteristics
+ * so that the page permissions can be set in the MMU. Without this,
+ * the kernel is just one blob with the same RWX permissions on all RAM
+ */
+#ifdef CONFIG_SRAM_REGION_PERMISSIONS
+	#define MMU_PAGE_ALIGN	. = ALIGN(CONFIG_MMU_PAGE_SIZE);
 #else
 	#define MMU_PAGE_ALIGN
 #endif
@@ -151,14 +154,6 @@ SECTIONS
  * zephyr_linker_sources() Cmake function.
  */
 #include <snippets-rodata.ld>
-#ifdef CONFIG_SOC_RODATA_LD
-#include <soc-rodata.ld>
-#endif
-
-#ifdef CONFIG_CUSTOM_RODATA_LD
-/* Located in project source directory */
-#include <custom-rodata.ld>
-#endif
 
 #include <linker/kobject-rom.ld>
 	} GROUP_LINK_IN(ROMABLE_REGION)
@@ -232,27 +227,9 @@ SECTIONS
 
 	__bss_num_words	= (__bss_end - __bss_start) >> 2;
 
-	SECTION_PROLOGUE(_NOINIT_SECTION_NAME, (NOLOAD),)
-	{
-	/*
-	 * This section is used for non-initialized objects that
-	 * will not be cleared during the boot process.
-	 */
-	*(.noinit)
-	*(".noinit.*")
-	*(".kernel_noinit.*")
-
-/* Located in generated directory. This file is populated by the
- * zephyr_linker_sources() Cmake function.
- */
-#include <snippets-noinit.ld>
-#ifdef CONFIG_SOC_NOINIT_LD
-#include <soc-noinit.ld>
-#endif
+#include <linker/common-noinit.ld>
 
 	MMU_PAGE_ALIGN
-
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, RAMABLE_REGION)
 
 	SECTION_DATA_PROLOGUE(_DATA_SECTION_NAME,,)
 	{
@@ -284,14 +261,6 @@ SECTIONS
  * zephyr_linker_sources() Cmake function.
  */
 #include <snippets-rwdata.ld>
-#ifdef CONFIG_SOC_RWDATA_LD
-#include <soc-rwdata.ld>
-#endif
-
-#ifdef CONFIG_CUSTOM_RWDATA_LD
-/* Located in project source directory */
-#include <custom-rwdata.ld>
-#endif
 
 #ifdef CONFIG_X86_KPTI
 	MMU_PAGE_ALIGN
@@ -351,19 +320,21 @@ SECTIONS
 	__data_rom_start = LOADADDR(_DATA_SECTION_NAME);
 
 #include <linker/common-ram.ld>
-
-#include <linker/kobject.ld>
 #include <linker/cplusplus-ram.ld>
+#include <arch/x86/pagetables.ld>
+
+/* Must be last in RAM */
+#include <linker/kobject.ld>
 
 	MMU_PAGE_ALIGN
 	__data_ram_end = .;
 
 	/* All unused memory also owned by the kernel for heaps */
-	__kernel_ram_end = PHYS_RAM_ADDR + PHYS_RAM_SIZE;
+	__kernel_ram_end = KERNEL_BASE_ADDR + KERNEL_RAM_SIZE;
 	__kernel_ram_size = __kernel_ram_end - __kernel_ram_start;
 
 	_image_ram_end = .;
-	_image_ram_all = (PHYS_RAM_ADDR + PHYS_RAM_SIZE) - _image_ram_start;
+	_image_ram_all = (KERNEL_BASE_ADDR + KERNEL_RAM_SIZE) - _image_ram_start;
 
 	_end = .; /* end of image */
 
@@ -390,10 +361,6 @@ SECTIONS
 
 
 
-#ifdef CONFIG_CUSTOM_SECTIONS_LD
-/* Located in project source directory */
-#include <custom-sections.ld>
-#endif
 /* Located in generated directory. This file is populated by the
  * zephyr_linker_sources() Cmake function.
  */

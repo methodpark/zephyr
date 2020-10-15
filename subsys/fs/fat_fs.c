@@ -63,10 +63,28 @@ static int translate_error(int error)
 	return -EIO;
 }
 
-static int fatfs_open(struct fs_file_t *zfp, const char *file_name)
+static uint8_t translate_flags(fs_mode_t flags)
+{
+	uint8_t fat_mode = 0;
+
+	fat_mode |= (flags & FS_O_READ) ? FA_READ : 0;
+	fat_mode |= (flags & FS_O_WRITE) ? FA_WRITE : 0;
+	fat_mode |= (flags & FS_O_CREATE) ? FA_OPEN_ALWAYS : 0;
+	/* NOTE: FA_APPEND is not translated because FAT FS does not
+	 * support append semantics of the Zephyr, where file position
+	 * is forwarded to the end before each write, the fatfs_write
+	 * will be tasked with setting a file position to the end,
+	 * if FA_APPEND flag is present.
+	 */
+
+	return fat_mode;
+}
+
+static int fatfs_open(struct fs_file_t *zfp, const char *file_name,
+		      fs_mode_t mode)
 {
 	FRESULT res;
-	u8_t fs_mode;
+	uint8_t fs_mode;
 	void *ptr;
 
 	if (k_mem_slab_alloc(&fatfs_filep_pool, &ptr, K_NO_WAIT) == 0) {
@@ -76,9 +94,14 @@ static int fatfs_open(struct fs_file_t *zfp, const char *file_name)
 		return -ENOMEM;
 	}
 
-	fs_mode = FA_READ | FA_WRITE | FA_OPEN_ALWAYS;
+	fs_mode = translate_flags(mode);
 
 	res = f_open(zfp->filep, &file_name[1], fs_mode);
+
+	if (res != FR_OK) {
+		k_mem_slab_free(&fatfs_filep_pool, &ptr);
+		zfp->filep = NULL;
+	}
 
 	return translate_error(res);
 }
@@ -91,6 +114,7 @@ static int fatfs_close(struct fs_file_t *zfp)
 
 	/* Free file ptr memory */
 	k_mem_slab_free(&fatfs_filep_pool, &zfp->filep);
+	zfp->filep = NULL;
 
 	return translate_error(res);
 }
@@ -137,10 +161,23 @@ static ssize_t fatfs_read(struct fs_file_t *zfp, void *ptr, size_t size)
 
 static ssize_t fatfs_write(struct fs_file_t *zfp, const void *ptr, size_t size)
 {
-	FRESULT res;
+	FRESULT res = FR_OK;
 	unsigned int bw;
+	off_t pos = f_size((FIL *)zfp->filep);
 
-	res = f_write(zfp->filep, ptr, size, &bw);
+	/* FA_APPEND flag means that file has been opened for append.
+	 * The FAT FS write does not support the POSIX append semantics,
+	 * to always write at the end of file, so set file position
+	 * at the end before each write if FA_APPEND is set.
+	 */
+	if (zfp->flags & FS_O_APPEND) {
+		res = f_lseek(zfp->filep, pos);
+	}
+
+	if (res == FR_OK) {
+		res = f_write(zfp->filep, ptr, size, &bw);
+	}
+
 	if (res != FR_OK) {
 		return translate_error(res);
 	}
@@ -214,7 +251,7 @@ static int fatfs_truncate(struct fs_file_t *zfp, off_t length)
 		 * optimization.
 		 */
 		unsigned int bw;
-		u8_t c = 0U;
+		uint8_t c = 0U;
 
 		for (int i = cur_length; i < length; i++) {
 			res = f_write(zfp->filep, &c, 1, &bw);
@@ -257,8 +294,12 @@ static int fatfs_opendir(struct fs_dir_t *zdp, const char *path)
 		return -ENOMEM;
 	}
 
-
 	res = f_opendir(zdp->dirp, &path[1]);
+
+	if (res != FR_OK) {
+		k_mem_slab_free(&fatfs_dirp_pool, &ptr);
+		zdp->dirp = NULL;
+	}
 
 	return translate_error(res);
 }
@@ -340,7 +381,7 @@ static int fatfs_mount(struct fs_mount_t *mountp)
 
 	/* If no file system found then create one */
 	if (res == FR_NO_FILESYSTEM) {
-		u8_t work[_MAX_SS];
+		uint8_t work[_MAX_SS];
 
 		res = f_mkfs(&mountp->mnt_point[1],
 				(FM_FAT | FM_SFD), 0, work, sizeof(work));
@@ -366,7 +407,7 @@ static int fatfs_unmount(struct fs_mount_t *mountp)
 }
 
 /* File system interface */
-static struct fs_file_system_t fatfs_fs = {
+static const struct fs_file_system_t fatfs_fs = {
 	.open = fatfs_open,
 	.close = fatfs_close,
 	.read = fatfs_read,
@@ -387,7 +428,7 @@ static struct fs_file_system_t fatfs_fs = {
 	.statvfs = fatfs_statvfs,
 };
 
-static int fatfs_init(struct device *dev)
+static int fatfs_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 

@@ -23,39 +23,39 @@ LOG_MODULE_REGISTER(spi_cc13xx_cc26xx);
 #include "spi_context.h"
 
 struct spi_cc13xx_cc26xx_config {
-	u32_t base;
-	u32_t sck_pin;
-	u32_t mosi_pin;
-	u32_t miso_pin;
-	u32_t cs_pin;
+	uint32_t base;
+	uint32_t sck_pin;
+	uint32_t mosi_pin;
+	uint32_t miso_pin;
+	uint32_t cs_pin;
 };
 
 struct spi_cc13xx_cc26xx_data {
 	struct spi_context ctx;
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-	u32_t pm_state;
+	uint32_t pm_state;
 #endif
 };
 
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)
 
-static inline struct spi_cc13xx_cc26xx_data *get_dev_data(struct device *dev)
+static inline struct spi_cc13xx_cc26xx_data *get_dev_data(const struct device *dev)
 {
-	return dev->driver_data;
+	return dev->data;
 }
 
 static inline const struct spi_cc13xx_cc26xx_config *
-get_dev_config(struct device *dev)
+get_dev_config(const struct device *dev)
 {
-	return dev->config_info;
+	return dev->config;
 }
 
-static int spi_cc13xx_cc26xx_configure(struct device *dev,
+static int spi_cc13xx_cc26xx_configure(const struct device *dev,
 				       const struct spi_config *config)
 {
 	const struct spi_cc13xx_cc26xx_config *cfg = get_dev_config(dev);
 	struct spi_context *ctx = &get_dev_data(dev)->ctx;
-	u32_t prot;
+	uint32_t prot;
 
 	if (spi_context_configured(ctx, config)) {
 		return 0;
@@ -136,14 +136,14 @@ static int spi_cc13xx_cc26xx_configure(struct device *dev,
 	return 0;
 }
 
-static int spi_cc13xx_cc26xx_transceive(struct device *dev,
+static int spi_cc13xx_cc26xx_transceive(const struct device *dev,
 					const struct spi_config *config,
 					const struct spi_buf_set *tx_bufs,
 					const struct spi_buf_set *rx_bufs)
 {
 	const struct spi_cc13xx_cc26xx_config *cfg = get_dev_config(dev);
 	struct spi_context *ctx = &get_dev_data(dev)->ctx;
-	u32_t txd, rxd;
+	uint32_t txd, rxd;
 	int err;
 
 	spi_context_lock(ctx, false, NULL);
@@ -193,7 +193,7 @@ done:
 	return err;
 }
 
-static int spi_cc13xx_cc26xx_release(struct device *dev,
+static int spi_cc13xx_cc26xx_release(const struct device *dev,
 				     const struct spi_config *config)
 {
 	struct spi_context *ctx = &get_dev_data(dev)->ctx;
@@ -212,8 +212,8 @@ static int spi_cc13xx_cc26xx_release(struct device *dev,
 }
 
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-static int spi_cc13xx_cc26xx_set_power_state(struct device *dev,
-	u32_t new_state)
+static int spi_cc13xx_cc26xx_set_power_state(const struct device *dev,
+					     uint32_t new_state)
 {
 	int ret = 0;
 
@@ -251,13 +251,15 @@ static int spi_cc13xx_cc26xx_set_power_state(struct device *dev,
 	return ret;
 }
 
-static int spi_cc13xx_cc26xx_pm_control(struct device *dev, u32_t ctrl_command,
-	void *context, device_pm_cb cb, void *arg)
+static int spi_cc13xx_cc26xx_pm_control(const struct device *dev,
+					uint32_t ctrl_command,
+					void *context, device_pm_cb cb,
+					void *arg)
 {
 	int ret = 0;
 
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
-		u32_t new_state = *((const u32_t *)context);
+		uint32_t new_state = *((const uint32_t *)context);
 
 		if (new_state != get_dev_data(dev)->pm_state) {
 			ret = spi_cc13xx_cc26xx_set_power_state(dev,
@@ -265,7 +267,7 @@ static int spi_cc13xx_cc26xx_pm_control(struct device *dev, u32_t ctrl_command,
 		}
 	} else {
 		__ASSERT_NO_MSG(ctrl_command == DEVICE_PM_GET_POWER_STATE);
-		*((u32_t *)context) = get_dev_data(dev)->pm_state;
+		*((uint32_t *)context) = get_dev_data(dev)->pm_state;
 	}
 
 	if (cb) {
@@ -282,23 +284,36 @@ static const struct spi_driver_api spi_cc13xx_cc26xx_driver_api = {
 	.release = spi_cc13xx_cc26xx_release,
 };
 
-#define SPI_CC13XX_CC26XX_DOMAIN_0 PRCM_DOMAIN_SERIAL
-#define SPI_CC13XX_CC26XX_DOMAIN_1 PRCM_DOMAIN_PERIPH
-
 #ifdef CONFIG_SYS_POWER_MANAGEMENT
-#define SPI_CC13XX_CC26XX_POWER_SPI(n)					\
-	/* Set Power dependencies & constraints */			\
-	Power_setDependency(PowerCC26XX_PERIPH_SSI##n)
+#define SPI_CC13XX_CC26XX_POWER_SPI(n)					  \
+	do {								  \
+		/* Set Power dependencies & constraints */		  \
+		if (DT_INST_REG_ADDR(n) == 0x40000000) {		  \
+			Power_setDependency(PowerCC26XX_PERIPH_SSI0);	  \
+		} else {						  \
+			Power_setDependency(PowerCC26XX_PERIPH_SSI1);	  \
+		}							  \
+	} while (0)
 #else
 #define SPI_CC13XX_CC26XX_POWER_SPI(n)					  \
 	do {								  \
+		uint32_t domain, periph;				  \
+									  \
+		/* Enable UART power domain */				  \
+		if (DT_INST_REG_ADDR(n) == 0x40000000) {		  \
+			domain = PRCM_DOMAIN_SERIAL;			  \
+			periph = PRCM_PERIPH_SSI0;			  \
+		} else {						  \
+			domain = PRCM_DOMAIN_PERIPH;			  \
+			periph = PRCM_PERIPH_SSI1;			  \
+		}							  \
 		/* Enable SSI##n power domain */			  \
-		PRCMPowerDomainOn(SPI_CC13XX_CC26XX_DOMAIN_##n);	  \
+		PRCMPowerDomainOn(domain);				  \
 									  \
 		/* Enable SSI##n peripherals */				  \
-		PRCMPeripheralRunEnable(PRCM_PERIPH_SSI##n);		  \
-		PRCMPeripheralSleepEnable(PRCM_PERIPH_SSI##n);		  \
-		PRCMPeripheralDeepSleepEnable(PRCM_PERIPH_SSI##n);	  \
+		PRCMPeripheralRunEnable(periph);			  \
+		PRCMPeripheralSleepEnable(periph);			  \
+		PRCMPeripheralDeepSleepEnable(periph);			  \
 									  \
 		/* Load PRCM settings */				  \
 		PRCMLoadSet();						  \
@@ -307,8 +322,7 @@ static const struct spi_driver_api spi_cc13xx_cc26xx_driver_api = {
 		}							  \
 									  \
 		/* SSI should not be accessed until power domain is on. */\
-		while (PRCMPowerDomainStatus(				  \
-			SPI_CC13XX_CC26XX_DOMAIN_##n) !=		  \
+		while (PRCMPowerDomainStatus(domain) !=			  \
 			PRCM_DOMAIN_POWER_ON) {				  \
 			continue;					  \
 		}							  \
@@ -340,7 +354,7 @@ static const struct spi_driver_api spi_cc13xx_cc26xx_driver_api = {
 #endif
 
 #define SPI_CC13XX_CC26XX_INIT_FUNC(n)					    \
-	static int spi_cc13xx_cc26xx_init_##n(struct device *dev)	    \
+	static int spi_cc13xx_cc26xx_init_##n(const struct device *dev)	    \
 	{								    \
 		SPI_CC13XX_CC26XX_INIT_PM_STATE;			    \
 									    \

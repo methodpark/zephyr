@@ -14,6 +14,7 @@
 LOG_MODULE_REGISTER(net_ctx, CONFIG_NET_CONTEXT_LOG_LEVEL);
 
 #include <kernel.h>
+#include <random/rand32.h>
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -59,7 +60,7 @@ static struct k_sem contexts_lock;
 
 #if defined(CONFIG_NET_UDP) || defined(CONFIG_NET_TCP)
 static int check_used_port(enum net_ip_protocol ip_proto,
-			   u16_t local_port,
+			   uint16_t local_port,
 			   const struct sockaddr *local_addr)
 
 {
@@ -100,10 +101,10 @@ static int check_used_port(enum net_ip_protocol ip_proto,
 	return 0;
 }
 
-static u16_t find_available_port(struct net_context *context,
+static uint16_t find_available_port(struct net_context *context,
 				    const struct sockaddr *addr)
 {
-	u16_t local_port;
+	uint16_t local_port;
 
 	do {
 		local_port = sys_rand32_get() | 0x8000;
@@ -123,7 +124,7 @@ static u16_t find_available_port(struct net_context *context,
 
 int net_context_get(sa_family_t family,
 		    enum net_sock_type type,
-		    u16_t ip_proto,
+		    uint16_t ip_proto,
 		    struct net_context **context)
 {
 	int i, ret = -ENOENT;
@@ -165,7 +166,11 @@ int net_context_get(sa_family_t family,
 				}
 			}
 		} else {
-			if (family == AF_PACKET || family == AF_CAN) {
+			if (IS_ENABLED(CONFIG_NET_SOCKETS_PACKET) &&
+			    family == AF_PACKET && type == SOCK_DGRAM &&
+			    ip_proto > 0) {
+				goto check_context;
+			} else if (family == AF_PACKET || family == AF_CAN) {
 				NET_DBG("Invalid family");
 				return -EPROTOTYPE;
 			}
@@ -220,6 +225,7 @@ int net_context_get(sa_family_t family,
 			return -EOPNOTSUPP;
 		}
 
+	check_context:
 		if (!context) {
 			NET_DBG("Invalid context");
 			return -EINVAL;
@@ -387,10 +393,6 @@ int net_context_put(struct net_context *context)
 
 	/* net_tcp_put() will handle decrementing refcount on stack's behalf */
 	net_tcp_put(context);
-	/* Assume it's better to have goto to immediate label than ugly
-	 * not indented #ifdef (if only they were intended!).
-	 */
-	goto unlock;
 
 unlock:
 	k_mutex_unlock(&context->lock);
@@ -446,7 +448,7 @@ static int bind_default(struct net_context *context)
 		}
 
 		ll_addr.sll_family = AF_PACKET;
-		ll_addr.sll_protocol = ETH_P_ALL;
+		ll_addr.sll_protocol = htons(ETH_P_ALL);
 		ll_addr.sll_ifindex = net_if_get_by_iface(net_if_get_default());
 
 		return net_context_bind(context, (struct sockaddr *)&ll_addr,
@@ -717,13 +719,15 @@ int net_context_bind(struct net_context *context, const struct sockaddr *addr,
 			ll_addr->sll_protocol;
 		net_sll_ptr(&context->local)->sll_addr =
 			net_if_get_link_addr(iface)->addr;
+		net_sll_ptr(&context->local)->sll_halen =
+			net_if_get_link_addr(iface)->len;
 
-		NET_DBG("Context %p binding to %d iface[%d] %p addr %s",
-			context, net_context_get_ip_proto(context),
+		NET_DBG("Context %p bind to type 0x%04x iface[%d] %p addr %s",
+			context, htons(net_context_get_ip_proto(context)),
 			ll_addr->sll_ifindex, iface,
 			log_strdup(net_sprint_ll_addr(
-					   net_if_get_link_addr(iface)->addr,
-					   net_if_get_link_addr(iface)->len)));
+				net_sll_ptr(&context->local)->sll_addr,
+				net_sll_ptr(&context->local)->sll_halen)));
 
 		return 0;
 	}
@@ -884,7 +888,7 @@ int net_context_connect(struct net_context *context,
 {
 	struct sockaddr *laddr = NULL;
 	struct sockaddr local_addr __unused;
-	u16_t lport, rport;
+	uint16_t lport, rport;
 	int ret;
 
 	NET_ASSERT(addr);
@@ -1103,10 +1107,10 @@ static int get_context_priority(struct net_context *context,
 				void *value, size_t *len)
 {
 #if defined(CONFIG_NET_CONTEXT_PRIORITY)
-	*((u8_t *)value) = context->options.priority;
+	*((uint8_t *)value) = context->options.priority;
 
 	if (len) {
-		*len = sizeof(u8_t);
+		*len = sizeof(uint8_t);
 	}
 
 	return 0;
@@ -1222,7 +1226,7 @@ static int context_setup_udp_packet(struct net_context *context,
 				    socklen_t addrlen)
 {
 	int ret = -EINVAL;
-	u16_t dst_port = 0U;
+	uint16_t dst_port = 0U;
 
 	if (IS_ENABLED(CONFIG_NET_IPV6) &&
 	    net_context_get_family(context) == AF_INET6) {
@@ -1328,10 +1332,10 @@ static void set_pkt_txtime(struct net_pkt *pkt, const struct msghdr *msghdr)
 
 	for (cmsg = CMSG_FIRSTHDR(msghdr); cmsg != NULL;
 	     cmsg = CMSG_NXTHDR(msghdr, cmsg)) {
-		if (cmsg->cmsg_len == CMSG_LEN(sizeof(u64_t)) &&
+		if (cmsg->cmsg_len == CMSG_LEN(sizeof(uint64_t)) &&
 		    cmsg->cmsg_level == SOL_SOCKET &&
 		    cmsg->cmsg_type == SCM_TXTIME) {
-			u64_t txtime = *(u64_t *)CMSG_DATA(cmsg);
+			uint64_t txtime = *(uint64_t *)CMSG_DATA(cmsg);
 
 			net_pkt_set_txtime(pkt, txtime);
 			break;
@@ -1365,9 +1369,7 @@ static int context_sendto(struct net_context *context,
 		msghdr = buf;
 	}
 
-	if (!msghdr && !dst_addr &&
-	    !(IS_ENABLED(CONFIG_NET_SOCKETS_CAN) &&
-	      net_context_get_ip_proto(context) == CAN_RAW)) {
+	if (!msghdr && !dst_addr) {
 		return -EDESTADDRREQ;
 	}
 
@@ -1428,6 +1430,21 @@ static int context_sendto(struct net_context *context,
 		struct sockaddr_ll *ll_addr = (struct sockaddr_ll *)dst_addr;
 		struct net_if *iface;
 
+		if (msghdr) {
+			ll_addr = msghdr->msg_name;
+			addrlen = msghdr->msg_namelen;
+
+			if (!ll_addr) {
+				ll_addr = (struct sockaddr_ll *)
+							(&context->remote);
+				addrlen = sizeof(struct sockaddr_ll);
+			}
+
+			/* For sendmsg(), the dst_addr is NULL so set it here.
+			 */
+			dst_addr = (const struct sockaddr *)ll_addr;
+		}
+
 		if (addrlen < sizeof(struct sockaddr_ll)) {
 			return -EINVAL;
 		}
@@ -1442,10 +1459,40 @@ static int context_sendto(struct net_context *context,
 				ll_addr->sll_ifindex);
 			return -EDESTADDRREQ;
 		}
+
+		if (net_context_get_type(context) == SOCK_DGRAM) {
+			context->flags |= NET_CONTEXT_REMOTE_ADDR_SET;
+
+			/* The user must set the protocol in send call */
+
+			/* For sendmsg() call, we might have set ll_addr to
+			 * point to remote addr.
+			 */
+			if ((void *)&context->remote != (void *)ll_addr) {
+				memcpy((struct sockaddr_ll *)&context->remote,
+				       ll_addr, sizeof(struct sockaddr_ll));
+			}
+		}
+
 	} else if (IS_ENABLED(CONFIG_NET_SOCKETS_CAN) &&
 		   net_context_get_family(context) == AF_CAN) {
 		struct sockaddr_can *can_addr = (struct sockaddr_can *)dst_addr;
 		struct net_if *iface;
+
+		if (msghdr) {
+			can_addr = msghdr->msg_name;
+			addrlen = msghdr->msg_namelen;
+
+			if (!can_addr) {
+				can_addr = (struct sockaddr_can *)
+							(&context->remote);
+				addrlen = sizeof(struct sockaddr_can);
+			}
+
+			/* For sendmsg(), the dst_addr is NULL so set it here.
+			 */
+			dst_addr = (const struct sockaddr *)can_addr;
+		}
 
 		if (addrlen < sizeof(struct sockaddr_can)) {
 			return -EINVAL;
@@ -1483,7 +1530,7 @@ static int context_sendto(struct net_context *context,
 
 	pkt = context_alloc_pkt(context, len, PKT_WAIT_TIME);
 	if (!pkt) {
-		return -ENOMEM;
+		return -ENOBUFS;
 	}
 
 	tmp_len = net_pkt_available_payload_buffer(
@@ -1496,7 +1543,7 @@ static int context_sendto(struct net_context *context,
 	context->user_data = user_data;
 
 	if (IS_ENABLED(CONFIG_NET_CONTEXT_PRIORITY)) {
-		u8_t priority;
+		uint8_t priority;
 
 		get_context_priority(context, &priority, NULL);
 		net_pkt_set_priority(pkt, priority);
@@ -1763,7 +1810,7 @@ static int recv_udp(struct net_context *context,
 		.sa_family = net_context_get_family(context),
 	};
 	struct sockaddr *laddr = NULL;
-	u16_t lport = 0U;
+	uint16_t lport = 0U;
 	int ret;
 
 	ARG_UNUSED(timeout);
@@ -1923,9 +1970,12 @@ int net_context_recv(struct net_context *context,
 				net_sll_ptr(&context->local)->sll_ifindex;
 			addr.sll_protocol =
 				net_sll_ptr(&context->local)->sll_protocol;
+			addr.sll_halen =
+				net_sll_ptr(&context->local)->sll_halen;
+
 			memcpy(addr.sll_addr,
 			       net_sll_ptr(&context->local)->sll_addr,
-			       sizeof(addr.sll_addr));
+			       MIN(addr.sll_halen, sizeof(addr.sll_addr)));
 
 			ret = recv_raw(context, cb, timeout,
 				       (struct sockaddr *)&addr, user_data);
@@ -1984,7 +2034,7 @@ unlock:
 }
 
 int net_context_update_recv_wnd(struct net_context *context,
-				s32_t delta)
+				int32_t delta)
 {
 	int ret;
 
@@ -2006,11 +2056,11 @@ static int set_context_priority(struct net_context *context,
 				const void *value, size_t len)
 {
 #if defined(CONFIG_NET_CONTEXT_PRIORITY)
-	if (len > sizeof(u8_t)) {
+	if (len > sizeof(uint8_t)) {
 		return -EINVAL;
 	}
 
-	context->options.priority = *((u8_t *)value);
+	context->options.priority = *((uint8_t *)value);
 
 	return 0;
 #else
@@ -2160,6 +2210,22 @@ void net_context_foreach(net_context_cb_t cb, void *user_data)
 	}
 
 	k_sem_give(&contexts_lock);
+}
+
+const char *net_context_state(struct net_context *context)
+{
+	switch (net_context_get_state(context)) {
+	case NET_CONTEXT_IDLE:
+		return "IDLE";
+	case NET_CONTEXT_CONNECTING:
+		return "CONNECTING";
+	case NET_CONTEXT_CONNECTED:
+		return "CONNECTED";
+	case NET_CONTEXT_LISTENING:
+		return "LISTENING";
+	}
+
+	return NULL;
 }
 
 void net_context_init(void)

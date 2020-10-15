@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.13.1)
 set(BOARD lpcxpresso54114_m4)
 
 
-find_package(Zephyr HINTS $ENV{ZEPHYR_BASE})
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
 if(NOT ("${BOARD}" STREQUAL "lpcxpresso54114_m4"))
   message(FATAL_ERROR "${BOARD} was specified, but this sample only supports lpcxpresso54114_m4")
@@ -18,7 +18,7 @@ ExternalProject_Add(
   ipm_mcux_remote
   SOURCE_DIR ${APPLICATION_SOURCE_DIR}/remote
   INSTALL_COMMAND ""      # This particular build system has no install command
-  BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/ipm_mcux_remote-prefix/src/ipm_mcux_remote-build/zephyr/zephyr.bin"
+  BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/ipm_mcux_remote-prefix/src/ipm_mcux_remote-build/zephyr/${KERNEL_BIN_NAME}"
 )
 
 project(ipm_mcux)

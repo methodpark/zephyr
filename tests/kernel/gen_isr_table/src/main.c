@@ -9,7 +9,7 @@
 #include <tc_util.h>
 #include <sw_isr_table.h>
 
-extern u32_t _irq_vector_table[];
+extern uint32_t _irq_vector_table[];
 
 #if defined(ARCH_IRQ_DIRECT_CONNECT) && defined(CONFIG_GEN_IRQ_VECTOR_TABLE)
 #define HAS_DIRECT_IRQS
@@ -36,13 +36,36 @@ extern u32_t _irq_vector_table[];
 /* ARC EMSDP' console will use irq 108 / irq 107, will conflict
  * with isr used here, so add a workaround
  */
-#undef CONFIG_NUM_IRQS
-#define CONFIG_NUM_IRQS 105
+#define TEST_NUM_IRQS	105
+#elif defined(CONFIG_SOC_NRF5340_CPUAPP) || defined(CONFIG_SOC_NRF9160)
+/* In nRF9160 and application core in nRF5340, not all interrupts with highest
+ * numbers are implemented. Thus, limit the number of interrupts reported to
+ * the test, so that it does not try to use some unavailable ones.
+ */
+#define TEST_NUM_IRQS	33
+#elif defined(CONFIG_SOC_STM32G071XX)
+/* In STM32G071XX limit the number of interrupts reported to
+ * the test, so that it does not try to use some of the IRQs
+ * at the end of the vector table that are already used by
+ * the board.
+ */
+#define TEST_NUM_IRQS	30
+#elif defined(CONFIG_SOC_NPCX7M6FB)
+/* In NPCX7M6FB, it uses some the IRQs at the end of the vector table, for
+ * example, the irq 60 and 61 used for Multi-Input Wake-Up Unit (MIWU) device
+ * by default, and conflicts with isr used for testing. Move IRQs for this
+ * test suite to solve the issue.
+ */
+#define TEST_NUM_IRQS	42
+#else
+#define TEST_NUM_IRQS	CONFIG_NUM_IRQS
 #endif
 
-#define IRQ_LINE(offset)	(CONFIG_NUM_IRQS - ((offset) + 1))
-#define TABLE_INDEX(offset)	(IRQ_TABLE_SIZE - ((offset) + 1))
-#define TRIG_CHECK_SIZE         6
+#define TEST_IRQ_TABLE_SIZE 	(IRQ_TABLE_SIZE - \
+				 (CONFIG_NUM_IRQS - TEST_NUM_IRQS))
+#define IRQ_LINE(offset)	(TEST_NUM_IRQS - ((offset) + 1))
+#define TABLE_INDEX(offset)	(TEST_IRQ_TABLE_SIZE - ((offset) + 1))
+#define TRIG_CHECK_SIZE		6
 #endif
 
 #define ISR3_ARG	0xb01dface
@@ -57,7 +80,8 @@ static volatile int trigger_check[TRIG_CHECK_SIZE];
 
 void trigger_irq(int irq)
 {
-#if defined(CONFIG_SOC_TI_LM3S6965_QEMU)
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE) || \
+	defined(CONFIG_SOC_TI_LM3S6965_QEMU)
 	/* QEMU does not simulate the STIR register: this is a workaround */
 	NVIC_SetPendingIRQ(irq);
 #else
@@ -67,7 +91,7 @@ void trigger_irq(int irq)
 #elif defined(CONFIG_RISCV)
 void trigger_irq(int irq)
 {
-	u32_t mip;
+	uint32_t mip;
 
 	__asm__ volatile ("csrrs %0, mip, %1\n"
 			  : "=r" (mip)
@@ -99,28 +123,28 @@ ISR_DIRECT_DECLARE(isr2)
 }
 #endif
 
-void isr3(void *param)
+void isr3(const void *param)
 {
 	printk("%s ran with parameter %p\n", __func__, param);
 	trigger_check[ISR3_OFFSET]++;
 }
 
 #ifdef ISR4_OFFSET
-void isr4(void *param)
+void isr4(const void *param)
 {
 	printk("%s ran with parameter %p\n", __func__, param);
 	trigger_check[ISR4_OFFSET]++;
 }
 #endif
 
-void isr5(void *param)
+void isr5(const void *param)
 {
 	printk("%s ran with parameter %p\n", __func__, param);
 	trigger_check[ISR5_OFFSET]++;
 }
 
 #ifdef ISR6_OFFSET
-void isr6(void *param)
+void isr6(const void *param)
 {
 	printk("%s ran with parameter %p\n", __func__, param);
 	trigger_check[ISR6_OFFSET]++;
@@ -168,7 +192,7 @@ static int check_vector(void *isr, int offset)
 	TC_PRINT("Checking _irq_vector_table entry %d for irq %d\n",
 		 TABLE_INDEX(offset), IRQ_LINE(offset));
 
-	if (_irq_vector_table[TABLE_INDEX(offset)] != (u32_t)isr) {
+	if (_irq_vector_table[TABLE_INDEX(offset)] != (uint32_t)isr) {
 		TC_PRINT("bad entry %d in vector table\n", TABLE_INDEX(offset));
 		return -1;
 	}
@@ -182,7 +206,7 @@ static int check_vector(void *isr, int offset)
 #endif
 
 #ifdef CONFIG_GEN_SW_ISR_TABLE
-static int check_sw_isr(void *isr, u32_t arg, int offset)
+static int check_sw_isr(void *isr, uint32_t arg, int offset)
 {
 	struct _isr_table_entry *e = &_sw_isr_table[TABLE_INDEX(offset)];
 #ifdef CONFIG_GEN_IRQ_VECTOR_TABLE
@@ -281,8 +305,8 @@ void main(void)
 	}
 #endif
 
-	irq_connect_dynamic(IRQ_LINE(ISR5_OFFSET), 1, isr5, (void *)ISR5_ARG,
-			    0);
+	irq_connect_dynamic(IRQ_LINE(ISR5_OFFSET), 1, isr5,
+			    (const void *)ISR5_ARG, 0);
 	irq_enable(IRQ_LINE(ISR5_OFFSET));
 	TC_PRINT("isr5 isr=%p irq=%d param=%p\n", isr5, IRQ_LINE(ISR5_OFFSET),
 		 (void *)ISR5_ARG);
@@ -291,8 +315,8 @@ void main(void)
 	}
 
 #ifdef ISR6_OFFSET
-	irq_connect_dynamic(IRQ_LINE(ISR6_OFFSET), 1, isr6, (void *)ISR6_ARG,
-			    0);
+	irq_connect_dynamic(IRQ_LINE(ISR6_OFFSET), 1, isr6,
+			    (const void *)ISR6_ARG, 0);
 	irq_enable(IRQ_LINE(ISR6_OFFSET));
 	TC_PRINT("isr6 isr=%p irq=%d param=%p\n", isr6, IRQ_LINE(ISR6_OFFSET),
 		 (void *)ISR6_ARG);

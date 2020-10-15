@@ -19,29 +19,33 @@ LOG_MODULE_REGISTER(net_tc, CONFIG_NET_TC_LOG_LEVEL);
 #include "net_tc_mapping.h"
 
 /* Stacks for TX work queue */
-K_THREAD_STACK_ARRAY_DEFINE(tx_stack, NET_TC_TX_COUNT,
+K_KERNEL_STACK_ARRAY_DEFINE(tx_stack, NET_TC_TX_COUNT,
 			    CONFIG_NET_TX_STACK_SIZE);
 
 /* Stacks for RX work queue */
-K_THREAD_STACK_ARRAY_DEFINE(rx_stack, NET_TC_RX_COUNT,
+K_KERNEL_STACK_ARRAY_DEFINE(rx_stack, NET_TC_RX_COUNT,
 			    CONFIG_NET_RX_STACK_SIZE);
 
 static struct net_traffic_class tx_classes[NET_TC_TX_COUNT];
 static struct net_traffic_class rx_classes[NET_TC_RX_COUNT];
 
-bool net_tc_submit_to_tx_queue(u8_t tc, struct net_pkt *pkt)
+bool net_tc_submit_to_tx_queue(uint8_t tc, struct net_pkt *pkt)
 {
 	if (k_work_pending(net_pkt_work(pkt))) {
 		return false;
 	}
+
+	net_pkt_set_tx_stats_tick(pkt, k_cycle_get_32());
 
 	k_work_submit_to_queue(&tx_classes[tc].work_q, net_pkt_work(pkt));
 
 	return true;
 }
 
-void net_tc_submit_to_rx_queue(u8_t tc, struct net_pkt *pkt)
+void net_tc_submit_to_rx_queue(uint8_t tc, struct net_pkt *pkt)
 {
+	net_pkt_set_rx_stats_tick(pkt, k_cycle_get_32());
+
 	k_work_submit_to_queue(&rx_classes[tc].work_q, net_pkt_work(pkt));
 }
 
@@ -66,7 +70,7 @@ int net_rx_priority2tc(enum net_priority prio)
 }
 
 /* Convert traffic class to thread priority */
-static u8_t tx_tc2thread(u8_t tc)
+static uint8_t tx_tc2thread(uint8_t tc)
 {
 	/* Initial implementation just maps the traffic class to certain queue.
 	 * If there are less queues than classes, then map them into
@@ -83,7 +87,7 @@ static u8_t tx_tc2thread(u8_t tc)
 	 * that thread_priorities[7] value should contain the highest priority
 	 * for the TX queue handling thread.
 	 */
-	static const u8_t thread_priorities[] = {
+	static const uint8_t thread_priorities[] = {
 #if NET_TC_TX_COUNT == 1
 		7
 #endif
@@ -119,7 +123,7 @@ static u8_t tx_tc2thread(u8_t tc)
 }
 
 /* Convert traffic class to thread priority */
-static u8_t rx_tc2thread(u8_t tc)
+static uint8_t rx_tc2thread(uint8_t tc)
 {
 	/* Initial implementation just maps the traffic class to certain queue.
 	 * If there are less queues than classes, then map them into
@@ -136,7 +140,7 @@ static u8_t rx_tc2thread(u8_t tc)
 	 * that thread_priorities[7] value should contain the highest priority
 	 * for the RX queue handling thread.
 	 */
-	static const u8_t thread_priorities[] = {
+	static const uint8_t thread_priorities[] = {
 #if NET_TC_RX_COUNT == 1
 		7
 #endif
@@ -227,7 +231,7 @@ void net_tc_tx_init(void)
 #endif
 
 	for (i = 0; i < NET_TC_TX_COUNT; i++) {
-		u8_t thread_priority;
+		uint8_t thread_priority;
 
 		thread_priority = tx_tc2thread(i);
 		tx_classes[i].tc = thread_priority;
@@ -235,12 +239,12 @@ void net_tc_tx_init(void)
 		NET_DBG("[%d] Starting TX queue %p stack size %zd "
 			"prio %d (%d)", i,
 			&tx_classes[i].work_q.queue,
-			K_THREAD_STACK_SIZEOF(tx_stack[i]),
+			K_KERNEL_STACK_SIZEOF(tx_stack[i]),
 			thread_priority, K_PRIO_COOP(thread_priority));
 
 		k_work_q_start(&tx_classes[i].work_q,
 			       tx_stack[i],
-			       K_THREAD_STACK_SIZEOF(tx_stack[i]),
+			       K_KERNEL_STACK_SIZEOF(tx_stack[i]),
 			       K_PRIO_COOP(thread_priority));
 		k_thread_name_set(&tx_classes[i].work_q.thread, "tx_workq");
 	}
@@ -257,7 +261,7 @@ void net_tc_rx_init(void)
 #endif
 
 	for (i = 0; i < NET_TC_RX_COUNT; i++) {
-		u8_t thread_priority;
+		uint8_t thread_priority;
 
 		thread_priority = rx_tc2thread(i);
 		rx_classes[i].tc = thread_priority;
@@ -265,12 +269,12 @@ void net_tc_rx_init(void)
 		NET_DBG("[%d] Starting RX queue %p stack size %zd "
 			"prio %d (%d)", i,
 			&rx_classes[i].work_q.queue,
-			K_THREAD_STACK_SIZEOF(rx_stack[i]),
+			K_KERNEL_STACK_SIZEOF(rx_stack[i]),
 			thread_priority, K_PRIO_COOP(thread_priority));
 
 		k_work_q_start(&rx_classes[i].work_q,
 			       rx_stack[i],
-			       K_THREAD_STACK_SIZEOF(rx_stack[i]),
+			       K_KERNEL_STACK_SIZEOF(rx_stack[i]),
 			       K_PRIO_COOP(thread_priority));
 		k_thread_name_set(&rx_classes[i].work_q.thread, "rx_workq");
 	}

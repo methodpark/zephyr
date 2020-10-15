@@ -14,7 +14,8 @@
 #ifdef CONFIG_APDS9960_TRIGGER
 K_SEM_DEFINE(sem, 0, 1);
 
-static void trigger_handler(struct device *dev, struct sensor_trigger *trigger)
+static void trigger_handler(const struct device *dev,
+			    struct sensor_trigger *trigger)
 {
 	ARG_UNUSED(dev);
 	ARG_UNUSED(trigger);
@@ -25,7 +26,7 @@ static void trigger_handler(struct device *dev, struct sensor_trigger *trigger)
 
 void main(void)
 {
-	struct device *dev;
+	const struct device *dev;
 	struct sensor_value intensity, pdata;
 
 	printk("APDS9960 sample application\n");
@@ -76,7 +77,7 @@ void main(void)
 		       intensity.val1, pdata.val1);
 
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-		u32_t p_state;
+		uint32_t p_state;
 
 		p_state = DEVICE_PM_LOW_POWER_STATE;
 		device_set_power_state(dev, p_state, NULL, NULL);

@@ -46,7 +46,7 @@ static const sim_clock_config_t simConfig = {
  */
 static void CLOCK_SYS_FllStableDelay(void)
 {
-	u32_t i = 30000U;
+	uint32_t i = 30000U;
 	while (i--) {
 		__NOP();
 	}
@@ -79,7 +79,7 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 }
 
-static int kwx_init(struct device *arg)
+static int kwx_init(const struct device *arg)
 {
 	ARG_UNUSED(arg);
 

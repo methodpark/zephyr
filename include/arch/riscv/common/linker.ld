@@ -125,9 +125,6 @@ SECTIONS
  * zephyr_linker_sources() Cmake function.
  */
 #include <snippets-rodata.ld>
-#ifdef CONFIG_SOC_RODATA_LD
-#include <soc-rodata.ld>
-#endif
 
 	} GROUP_LINK_IN(ROMABLE_REGION)
 
@@ -156,9 +153,6 @@ SECTIONS
  * zephyr_linker_sources() Cmake function.
  */
 #include <snippets-rwdata.ld>
-#ifdef CONFIG_SOC_RWDATA_LD
-#include <soc-rwdata.ld>
-#endif
 
 	}  GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
@@ -190,24 +184,7 @@ SECTIONS
 		  __bss_end = ALIGN(4);
 	}  GROUP_DATA_LINK_IN(RAMABLE_REGION, RAMABLE_REGION)
 
-    SECTION_PROLOGUE(_NOINIT_SECTION_NAME,(NOLOAD),)
-	{
-		/*
-		 * This section is used for non-initialized objects that
-		 * will not be cleared during the boot process.
-		 */
-		 *(.noinit)
-		 *(".noinit.*")
-
-/* Located in generated directory. This file is populated by the
- * zephyr_linker_sources() Cmake function.
- */
-#include <snippets-noinit.ld>
-#ifdef CONFIG_SOC_NOINIT_LD
-#include <soc-noinit.ld>
-#endif
-
-	} GROUP_LINK_IN(RAMABLE_REGION)
+#include <linker/common-noinit.ld>
 
 #include <linker/cplusplus-ram.ld>
 

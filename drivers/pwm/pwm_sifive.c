@@ -49,16 +49,16 @@ LOG_MODULE_REGISTER(pwm_sifive, CONFIG_PWM_LOG_LEVEL);
 struct pwm_sifive_data {};
 
 struct pwm_sifive_cfg {
-	u32_t base;
-	u32_t f_sys;
-	u32_t cmpwidth;
+	uint32_t base;
+	uint32_t f_sys;
+	uint32_t cmpwidth;
 };
 
 /* Helper Functions */
 
-static inline void sys_set_mask(mem_addr_t addr, u32_t mask, u32_t value)
+static inline void sys_set_mask(mem_addr_t addr, uint32_t mask, uint32_t value)
 {
-	u32_t temp = sys_read32(addr);
+	uint32_t temp = sys_read32(addr);
 
 	temp &= ~(mask);
 	temp |= value;
@@ -68,9 +68,9 @@ static inline void sys_set_mask(mem_addr_t addr, u32_t mask, u32_t value)
 
 /* API Functions */
 
-static int pwm_sifive_init(struct device *dev)
+static int pwm_sifive_init(const struct device *dev)
 {
-	const struct pwm_sifive_cfg *config = dev->config_info;
+	const struct pwm_sifive_cfg *config = dev->config;
 
 	/* When pwms == pwmcmp0, reset the counter */
 	sys_set_bit(PWM_REG(config, REG_PWMCFG), SF_PWMZEROCMP);
@@ -95,16 +95,16 @@ static int pwm_sifive_init(struct device *dev)
 	return 0;
 }
 
-static int pwm_sifive_pin_set(struct device *dev,
-			      u32_t pwm,
-			      u32_t period_cycles,
-			      u32_t pulse_cycles,
+static int pwm_sifive_pin_set(const struct device *dev,
+			      uint32_t pwm,
+			      uint32_t period_cycles,
+			      uint32_t pulse_cycles,
 			      pwm_flags_t flags)
 {
 	const struct pwm_sifive_cfg *config = NULL;
-	u32_t count_max = 0U;
-	u32_t max_cmp_val = 0U;
-	u32_t pwmscale = 0U;
+	uint32_t count_max = 0U;
+	uint32_t max_cmp_val = 0U;
+	uint32_t pwmscale = 0U;
 
 	if (dev == NULL) {
 		LOG_ERR("The device instance pointer was NULL\n");
@@ -116,7 +116,7 @@ static int pwm_sifive_pin_set(struct device *dev,
 		return -ENOTSUP;
 	}
 
-	config = dev->config_info;
+	config = dev->config;
 	if (config == NULL) {
 		LOG_ERR("The device configuration is NULL\n");
 		return -EFAULT;
@@ -188,9 +188,9 @@ static int pwm_sifive_pin_set(struct device *dev,
 	return 0;
 }
 
-static int pwm_sifive_get_cycles_per_sec(struct device *dev,
-					 u32_t pwm,
-					 u64_t *cycles)
+static int pwm_sifive_get_cycles_per_sec(const struct device *dev,
+					 uint32_t pwm,
+					 uint64_t *cycles)
 {
 	const struct pwm_sifive_cfg *config;
 
@@ -199,7 +199,7 @@ static int pwm_sifive_get_cycles_per_sec(struct device *dev,
 		return -EFAULT;
 	}
 
-	config = dev->config_info;
+	config = dev->config;
 	if (config == NULL) {
 		LOG_ERR("The device configuration is NULL\n");
 		return -EFAULT;

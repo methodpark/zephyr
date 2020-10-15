@@ -286,14 +286,6 @@ static void coop_delayed_work_cancel_main(int arg1, int arg2)
 
 	TC_PRINT(" - Cancel delayed work from coop thread\n");
 	k_delayed_work_cancel(&delayed_tests[1].work);
-
-#if defined(CONFIG_POLL)
-	k_delayed_work_submit(&delayed_tests[2].work,
-			      K_NO_WAIT /* Submit immediately */);
-
-	TC_PRINT(" - Cancel pending delayed work from coop thread\n");
-	k_delayed_work_cancel(&delayed_tests[2].work);
-#endif
 }
 
 /**
@@ -322,6 +314,37 @@ static void test_delayed_cancel(void)
 
 	TC_PRINT(" - Checking results\n");
 	check_results(0);
+}
+
+static void test_delayed_pending(void)
+{
+	TC_PRINT("Starting delayed pending test\n");
+
+	k_delayed_work_init(&delayed_tests[0].work, delayed_work_handler);
+
+	zassert_false(k_delayed_work_pending(&delayed_tests[0].work), NULL);
+
+	TC_PRINT(" - Check pending delayed work when in workqueue\n");
+	k_delayed_work_submit(&delayed_tests[0].work, K_NO_WAIT);
+	zassert_true(k_delayed_work_pending(&delayed_tests[0].work), NULL);
+
+	k_msleep(1);
+	zassert_false(k_delayed_work_pending(&delayed_tests[0].work), NULL);
+
+	TC_PRINT(" - Checking results\n");
+	check_results(1);
+	reset_results();
+
+	TC_PRINT(" - Check pending delayed work with timeout\n");
+	k_delayed_work_submit(&delayed_tests[0].work, K_MSEC(WORK_ITEM_WAIT));
+	zassert_true(k_delayed_work_pending(&delayed_tests[0].work), NULL);
+
+	k_msleep(WORK_ITEM_WAIT_ALIGNED);
+	zassert_false(k_delayed_work_pending(&delayed_tests[0].work), NULL);
+
+	TC_PRINT(" - Checking results\n");
+	check_results(1);
+	reset_results();
 }
 
 static void delayed_resubmit_work_handler(struct k_work *work)
@@ -376,7 +399,7 @@ static void coop_delayed_work_resubmit(void)
 #if defined(CONFIG_ARCH_POSIX)
 		k_busy_wait(1000);
 #else
-		volatile u32_t uptime;
+		volatile uint32_t uptime;
 		uptime = k_uptime_get_32();
 		while (k_uptime_get_32() == uptime) {
 		}
@@ -766,6 +789,7 @@ void test_main(void)
 			 ztest_1cpu_unit_test(test_delayed_resubmit),
 			 ztest_1cpu_unit_test(test_delayed_resubmit_thread),
 			 ztest_1cpu_unit_test(test_delayed_cancel),
+			 ztest_1cpu_unit_test(test_delayed_pending),
 			 ztest_1cpu_unit_test(test_triggered),
 			 ztest_1cpu_unit_test(test_already_triggered),
 			 ztest_1cpu_unit_test(test_triggered_resubmit),

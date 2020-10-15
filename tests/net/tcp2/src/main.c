@@ -64,9 +64,9 @@ static struct sockaddr_in6 peer_addr_v6_s = {
 };
 
 static struct net_if *iface;
-static u8_t test_case_no;
-static u32_t seq;
-static u32_t ack;
+static uint8_t test_case_no;
+static uint32_t seq;
+static uint32_t ack;
 
 static K_SEM_DEFINE(test_sem, 0, 1);
 static bool sem;
@@ -87,7 +87,7 @@ static enum test_state t_state;
 static struct k_delayed_work test_server;
 static void test_server_timeout(struct k_work *work);
 
-static int tester_send(struct device *dev, struct net_pkt *pkt);
+static int tester_send(const struct device *dev, struct net_pkt *pkt);
 
 static void handle_client_test(sa_family_t af, struct tcphdr *th);
 static void handle_server_test(sa_family_t af, struct tcphdr *th);
@@ -95,7 +95,7 @@ static void handle_syn_resend(void);
 static void handle_client_fin_wait_2_test(sa_family_t af, struct tcphdr *th);
 static void handle_client_closing_test(sa_family_t af, struct tcphdr *th);
 
-static void verify_flags(struct tcphdr *th, u8_t flags,
+static void verify_flags(struct tcphdr *th, uint8_t flags,
 			 const char *fun, int line)
 {
 	if (!(th && FL(&th->th_flags, ==, flags))) {
@@ -107,22 +107,22 @@ static void verify_flags(struct tcphdr *th, u8_t flags,
 	verify_flags(_th, _flags, __func__, __LINE__)
 
 struct net_tcp_context {
-	u8_t mac_addr[sizeof(struct net_eth_addr)];
+	uint8_t mac_addr[sizeof(struct net_eth_addr)];
 	struct net_linkaddr ll_addr;
 };
 
-static int net_tcp_dev_init(struct device *dev)
+static int net_tcp_dev_init(const struct device *dev)
 {
-	struct net_tcp_context *net_tcp_context = dev->driver_data;
+	struct net_tcp_context *net_tcp_context = dev->data;
 
 	net_tcp_context = net_tcp_context;
 
 	return 0;
 }
 
-static u8_t *net_tcp_get_mac(struct device *dev)
+static uint8_t *net_tcp_get_mac(const struct device *dev)
 {
-	struct net_tcp_context *context = dev->driver_data;
+	struct net_tcp_context *context = dev->data;
 
 	if (context->mac_addr[2] == 0x00) {
 		/* 00-00-5E-00-53-xx Documentation RFC 7042 */
@@ -139,7 +139,7 @@ static u8_t *net_tcp_get_mac(struct device *dev)
 
 static void net_tcp_iface_init(struct net_if *iface)
 {
-	u8_t *mac = net_tcp_get_mac(net_if_get_device(iface));
+	uint8_t *mac = net_tcp_get_mac(net_if_get_device(iface));
 
 	net_if_set_link_addr(iface, mac, 6, NET_LINK_ETHERNET);
 }
@@ -167,14 +167,13 @@ static void test_sem_give(void)
 static void test_sem_take(k_timeout_t timeout, int line)
 {
 	sem = true;
-	k_sem_take(&test_sem, timeout);
 
-	if (sem) {
+	if (k_sem_take(&test_sem, timeout) != 0) {
 		zassert_true(false, "semaphore timed out (line %d)", line);
 	}
 }
 
-static u8_t tcp_options[20] = {
+static uint8_t tcp_options[20] = {
 	0x02, 0x04, 0x05, 0xb4, /* Max segment */
 	0x04, 0x02, /* SACK */
 	0x08, 0x0a, 0xc2, 0x7b, 0xef, 0x0f, 0x00, 0x00, 0x00, 0x00, /* Time */
@@ -182,14 +181,14 @@ static u8_t tcp_options[20] = {
 	0x03, 0x03, 0x07 /* Win scale*/ };
 
 static struct net_pkt *tester_prepare_tcp_pkt(sa_family_t af,
-					      u16_t src_port, u16_t dst_port,
-					      u8_t flags, u8_t *data,
+					      uint16_t src_port, uint16_t dst_port,
+					      uint8_t flags, uint8_t *data,
 					      size_t len)
 {
 	NET_PKT_DATA_ACCESS_DEFINE(tcp_access, struct tcphdr);
 	struct net_pkt *pkt;
 	struct tcphdr *th;
-	u8_t opts_len = 0;
+	uint8_t opts_len = 0;
 	int ret = -EINVAL;
 
 	if ((test_case_no == 4U) && (flags & SYN)) {
@@ -282,42 +281,42 @@ fail:
 	return NULL;
 }
 
-static struct net_pkt *prepare_syn_packet(sa_family_t af, u16_t src_port,
-					  u16_t dst_port)
+static struct net_pkt *prepare_syn_packet(sa_family_t af, uint16_t src_port,
+					  uint16_t dst_port)
 {
 	return tester_prepare_tcp_pkt(af, src_port, dst_port, SYN, NULL, 0U);
 }
 
-static struct net_pkt *prepare_syn_ack_packet(sa_family_t af, u16_t src_port,
-					      u16_t dst_port)
+static struct net_pkt *prepare_syn_ack_packet(sa_family_t af, uint16_t src_port,
+					      uint16_t dst_port)
 {
 	return tester_prepare_tcp_pkt(af, src_port, dst_port, SYN | ACK,
 				      NULL, 0U);
 }
 
-static struct net_pkt *prepare_ack_packet(sa_family_t af, u16_t src_port,
-					  u16_t dst_port)
+static struct net_pkt *prepare_ack_packet(sa_family_t af, uint16_t src_port,
+					  uint16_t dst_port)
 {
 	return tester_prepare_tcp_pkt(af, src_port, dst_port, ACK, NULL, 0U);
 }
 
-static struct net_pkt *prepare_data_packet(sa_family_t af, u16_t src_port,
-					   u16_t dst_port, u8_t *data,
+static struct net_pkt *prepare_data_packet(sa_family_t af, uint16_t src_port,
+					   uint16_t dst_port, uint8_t *data,
 					   size_t len)
 {
 	return tester_prepare_tcp_pkt(af, src_port, dst_port, PSH | ACK, data,
 				      len);
 }
 
-static struct net_pkt *prepare_fin_ack_packet(sa_family_t af, u16_t src_port,
-					      u16_t dst_port)
+static struct net_pkt *prepare_fin_ack_packet(sa_family_t af, uint16_t src_port,
+					      uint16_t dst_port)
 {
 	return tester_prepare_tcp_pkt(af, src_port, dst_port, FIN | ACK,
 				      NULL, 0U);
 }
 
-static struct net_pkt *prepare_fin_packet(sa_family_t af, u16_t src_port,
-					  u16_t dst_port)
+static struct net_pkt *prepare_fin_packet(sa_family_t af, uint16_t src_port,
+					  uint16_t dst_port)
 {
 	return tester_prepare_tcp_pkt(af, src_port, dst_port, FIN, NULL, 0U);
 }
@@ -347,7 +346,7 @@ fail:
 	return -EINVAL;
 }
 
-static int tester_send(struct device *dev, struct net_pkt *pkt)
+static int tester_send(const struct device *dev, struct net_pkt *pkt)
 {
 	struct tcphdr th;
 	int ret;
@@ -480,7 +479,7 @@ fail:
 static void test_client_ipv4(void)
 {
 	struct net_context *ctx;
-	u8_t data = 0x41; /* "A" */
+	uint8_t data = 0x41; /* "A" */
 	int ret;
 
 	t_state = T_SYN;
@@ -497,7 +496,7 @@ static void test_client_ipv4(void)
 	ret = net_context_connect(ctx, (struct sockaddr *)&peer_addr_s,
 				  sizeof(struct sockaddr_in),
 				  NULL,
-				  K_NO_WAIT, NULL);
+				  K_MSEC(100), NULL);
 	if (ret < 0) {
 		zassert_true(false, "Failed to connect to peer");
 	}
@@ -542,7 +541,7 @@ static void test_client_ipv4(void)
 static void test_client_ipv6(void)
 {
 	struct net_context *ctx;
-	u8_t data = 0x41; /* "A" */
+	uint8_t data = 0x41; /* "A" */
 	int ret;
 
 	t_state = T_SYN;
@@ -559,7 +558,7 @@ static void test_client_ipv6(void)
 	ret = net_context_connect(ctx, (struct sockaddr *)&peer_addr_v6_s,
 				  sizeof(struct sockaddr_in6),
 				  NULL,
-				  K_NO_WAIT, NULL);
+				  K_MSEC(100), NULL);
 	if (ret < 0) {
 		zassert_true(false, "Failed to connect to peer");
 	}
@@ -878,7 +877,7 @@ static void test_server_ipv6(void)
 
 static void handle_syn_resend(void)
 {
-	static u8_t syn_times;
+	static uint8_t syn_times;
 
 	syn_times++;
 
@@ -910,10 +909,9 @@ static void test_client_syn_resend(void)
 	ret = net_context_connect(ctx, (struct sockaddr *)&peer_addr_s,
 				  sizeof(struct sockaddr_in),
 				  NULL,
-				  K_NO_WAIT, NULL);
-	if (ret < 0) {
-		zassert_true(false, "Failed to connect to peer");
-	}
+				  K_MSEC(300), NULL);
+
+	zassert_true(ret < 0, "Connect on no response from peer");
 
 	/* test handler will release the sem once it receives SYN again */
 	test_sem_take(K_MSEC(500), __LINE__);
@@ -998,7 +996,7 @@ fail:
 static void test_client_fin_wait_2_ipv4(void)
 {
 	struct net_context *ctx;
-	u8_t data = 0x41; /* "A" */
+	uint8_t data = 0x41; /* "A" */
 	int ret;
 
 	t_state = T_SYN;
@@ -1015,7 +1013,7 @@ static void test_client_fin_wait_2_ipv4(void)
 	ret = net_context_connect(ctx, (struct sockaddr *)&peer_addr_s,
 				  sizeof(struct sockaddr_in),
 				  NULL,
-				  K_NO_WAIT, NULL);
+				  K_MSEC(100), NULL);
 	if (ret < 0) {
 		zassert_true(false, "Failed to connect to peer");
 	}
@@ -1119,7 +1117,7 @@ fail:
 static void test_client_closing_ipv6(void)
 {
 	struct net_context *ctx;
-	u8_t data = 0x41; /* "A" */
+	uint8_t data = 0x41; /* "A" */
 	int ret;
 
 	t_state = T_SYN;
@@ -1136,7 +1134,7 @@ static void test_client_closing_ipv6(void)
 	ret = net_context_connect(ctx, (struct sockaddr *)&peer_addr_v6_s,
 				  sizeof(struct sockaddr_in6),
 				  NULL,
-				  K_NO_WAIT, NULL);
+				  K_MSEC(100), NULL);
 	if (ret < 0) {
 		zassert_true(false, "Failed to connect to peer");
 	}

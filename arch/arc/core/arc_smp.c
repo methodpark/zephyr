@@ -35,7 +35,7 @@ volatile struct {
  * master core that it's waken
  *
  */
-volatile u32_t arc_cpu_wake_flag;
+volatile uint32_t arc_cpu_wake_flag;
 
 volatile char *arc_cpu_sp;
 /*
@@ -87,7 +87,7 @@ void z_arc_slave_start(int cpu_num)
 
 #ifdef CONFIG_SMP
 
-static void sched_ipi_handler(void *unused)
+static void sched_ipi_handler(const void *unused)
 {
 	ARG_UNUSED(unused);
 
@@ -98,7 +98,7 @@ static void sched_ipi_handler(void *unused)
 /* arch implementation of sched_ipi */
 void arch_sched_ipi(void)
 {
-	u32_t i;
+	uint32_t i;
 
 	/* broadcast sched_ipi request to other cores
 	 * if the target is current core, hardware will ignore it
@@ -108,7 +108,7 @@ void arch_sched_ipi(void)
 	}
 }
 
-static int arc_smp_init(struct device *dev)
+static int arc_smp_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 	struct arc_connect_bcr bcr;

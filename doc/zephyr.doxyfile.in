@@ -223,6 +223,7 @@ TAB_SIZE               = 8
 ALIASES                = "rst=\verbatim embed:rst:leading-asterisk" \
                          "endrst=\endverbatim"
 
+ALIASES += option{1}="\verbatim embed:rst:inline :option:`\1` \endverbatim"
 ALIASES += req{1}="\ref ZEPH_\1 \"ZEPH-\1\" "
 ALIASES += satisfy{1}="\xrefitem satisfy \"Satisfies requirement\" \"Requirement Implementation\" \1"
 ALIASES += verify{1}="\xrefitem verify \"Verifies requirement\" \"Requirement Verification\" \1"
@@ -1966,11 +1967,13 @@ PREDEFINED             = "CONFIG_ARCH_HAS_CUSTOM_BUSY_WAIT" \
                          "CONFIG_BT_SMP" \
                          "CONFIG_BT_SMP_APP_PAIRING_ACCEPT" \
                          "CONFIG_DEVICE_POWER_MANAGEMENT" \
+                         "CONFIG_DEVICE_IDLE_PM" \
                          "CONFIG_ERRNO" \
-                         "CONFIG_EXECUTION_BENCHMARKING" \
+                         "CONFIG_FLASH_JESD216_API" \
                          "CONFIG_FLASH_PAGE_LAYOUT" \
                          "CONFIG_FPU" \
                          "CONFIG_FPU_SHARING" \
+                         "CONFIG_MMU" \
                          "CONFIG_NET_L2_ETHERNET_MGMT" \
                          "CONFIG_NET_MGMT_EVENT" \
                          "CONFIG_NET_TCP" \
@@ -1988,6 +1991,7 @@ PREDEFINED             = "CONFIG_ARCH_HAS_CUSTOM_BUSY_WAIT" \
                          "CONFIG_THREAD_STACK_INFO" \
                          "CONFIG_UART_DRV_CMD" \
                          "CONFIG_UART_INTERRUPT_DRIVEN" \
+                         "CONFIG_UART_ASYNC_API" \
                          "CONFIG_USERSPACE" \
                          "CONFIG_USE_SWITCH" \
                          "NET_MGMT_DEFINE_REQUEST_HANDLER(x)=" \

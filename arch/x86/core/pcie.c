@@ -5,20 +5,85 @@
  */
 
 #include <kernel.h>
+#include <sys/device_mmio.h>
 #include <drivers/pcie/pcie.h>
+
+#ifdef CONFIG_ACPI
+#include <arch/x86/acpi.h>
+#endif
 
 #ifdef CONFIG_PCIE_MSI
 #include <drivers/pcie/msi.h>
 #endif
 
-/*
- * The Configuration Mechanism (previously, Configuration Mechanism #1)
- * uses two 32-bit ports in the I/O space, here called CAP and CDP.
- *
- * N.B.: this code relies on the fact that the PCIE_BDF() format (as
- * defined in dt-bindings/pcie/pcie.h) and the CAP agree on the bus/dev/func
- * bitfield positions and sizes.
- */
+/* PCI Express Extended Configuration Mechanism (MMIO) */
+#ifdef CONFIG_PCIE_MMIO_CFG
+
+#define MAX_PCI_BUS_SEGMENTS 4
+
+static struct {
+	uint32_t start_bus;
+	uint32_t n_buses;
+	uint8_t *mmio;
+} bus_segs[MAX_PCI_BUS_SEGMENTS];
+
+static bool do_pcie_mmio_cfg;
+
+static void pcie_mm_init(void)
+{
+#ifdef CONFIG_ACPI
+	struct acpi_mcfg *m = z_acpi_find_table(ACPI_MCFG_SIGNATURE);
+
+	if (m != NULL) {
+		int n = (m->sdt.len - sizeof(*m)) / sizeof(m->pci_segs[0]);
+
+		for (int i = 0; i < n && i < MAX_PCI_BUS_SEGMENTS; i++) {
+			size_t size;
+			uintptr_t phys_addr;
+
+			bus_segs[i].start_bus = m->pci_segs[i].start_bus;
+			bus_segs[i].n_buses = 1 + m->pci_segs[i].end_bus
+				- m->pci_segs[i].start_bus;
+
+			phys_addr = m->pci_segs[i].base_addr;
+			/* 32 devices & 8 functions per bus, 4k per device */
+			size = bus_segs[i].n_buses * (32 * 8 * 4096);
+
+			device_map((mm_reg_t *)&bus_segs[i].mmio, phys_addr,
+				   size, K_MEM_CACHE_NONE);
+		}
+
+		do_pcie_mmio_cfg = true;
+	}
+#endif
+}
+
+static inline void pcie_mm_conf(pcie_bdf_t bdf, unsigned int reg,
+				bool write, uint32_t *data)
+{
+	for (int i = 0; i < ARRAY_SIZE(bus_segs); i++) {
+		int off = PCIE_BDF_TO_BUS(bdf) - bus_segs[i].start_bus;
+
+		if (off >= 0 && off < bus_segs[i].n_buses) {
+			bdf = PCIE_BDF(off,
+				       PCIE_BDF_TO_DEV(bdf),
+				       PCIE_BDF_TO_FUNC(bdf));
+
+			volatile uint32_t *regs
+				= (void *)&bus_segs[0].mmio[bdf << 4];
+
+			if (write) {
+				regs[reg] = *data;
+			} else {
+				*data = regs[reg];
+			}
+		}
+	}
+}
+
+#endif /* CONFIG_PCIE_MMIO_CFG */
+
+/* Traditional Configuration Mechanism */
 
 #define PCIE_X86_CAP	0xCF8U	/* Configuration Address Port */
 #define PCIE_X86_CAP_BDF_MASK	0x00FFFF00U  /* b/d/f bits */
@@ -32,7 +97,8 @@
  * Helper function for exported configuration functions. Configuration access
  * ain't atomic, so spinlock to keep drivers from clobbering each other.
  */
-static void pcie_conf(pcie_bdf_t bdf, unsigned int reg, bool write, u32_t *data)
+static inline void pcie_io_conf(pcie_bdf_t bdf, unsigned int reg,
+				bool write, uint32_t *data)
 {
 	static struct k_spinlock lock;
 	k_spinlock_key_t k;
@@ -54,17 +120,35 @@ static void pcie_conf(pcie_bdf_t bdf, unsigned int reg, bool write, u32_t *data)
 	k_spin_unlock(&lock, k);
 }
 
+static inline void pcie_conf(pcie_bdf_t bdf, unsigned int reg,
+			     bool write, uint32_t *data)
+
+{
+#ifdef CONFIG_PCIE_MMIO_CFG
+	if (bus_segs[0].mmio == NULL) {
+		pcie_mm_init();
+	}
+
+	if (do_pcie_mmio_cfg) {
+		pcie_mm_conf(bdf, reg, write, data);
+	} else
+#endif
+	{
+		pcie_io_conf(bdf, reg, write, data);
+	}
+}
+
 /* these functions are explained in include/drivers/pcie/pcie.h */
 
-u32_t pcie_conf_read(pcie_bdf_t bdf, unsigned int reg)
+uint32_t pcie_conf_read(pcie_bdf_t bdf, unsigned int reg)
 {
-	u32_t data;
+	uint32_t data = 0;
 
 	pcie_conf(bdf, reg, false, &data);
 	return data;
 }
 
-void pcie_conf_write(pcie_bdf_t bdf, unsigned int reg, u32_t data)
+void pcie_conf_write(pcie_bdf_t bdf, unsigned int reg, uint32_t data)
 {
 	pcie_conf(bdf, reg, true, &data);
 }
@@ -73,13 +157,13 @@ void pcie_conf_write(pcie_bdf_t bdf, unsigned int reg, u32_t data)
 
 /* these functions are explained in include/drivers/pcie/msi.h */
 
-u32_t pcie_msi_map(unsigned int irq)
+uint32_t pcie_msi_map(unsigned int irq)
 {
 	ARG_UNUSED(irq);
 	return 0xFEE00000U;  /* standard delivery to BSP local APIC */
 }
 
-u16_t pcie_msi_mdr(unsigned int irq)
+uint16_t pcie_msi_mdr(unsigned int irq)
 {
 	unsigned char vector = Z_IRQ_TO_INTERRUPT_VECTOR(irq);
 

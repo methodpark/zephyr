@@ -8,7 +8,6 @@
 #
 menuconfig I2C
 	bool "I2C Drivers"
-	select HAS_DTS_I2C
 	help
 	  Enable I2C Driver Configuration
 
@@ -32,11 +31,13 @@ source "drivers/i2c/slave/Kconfig"
 source "drivers/i2c/Kconfig.gpio"
 source "drivers/i2c/Kconfig.xec"
 source "drivers/i2c/Kconfig.nrfx"
+source "drivers/i2c/Kconfig.i2c_emul"
 source "drivers/i2c/Kconfig.sbcon"
 source "drivers/i2c/Kconfig.sifive"
 source "drivers/i2c/Kconfig.stm32"
 source "drivers/i2c/Kconfig.sam0"
 source "drivers/i2c/Kconfig.litex"
+source "drivers/i2c/Kconfig.lpc11u6x"
 
 config I2C_INIT_PRIORITY
 	int "Init priority"

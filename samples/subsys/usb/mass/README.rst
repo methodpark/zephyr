@@ -48,11 +48,11 @@ The board will be detected as shown by the Linux journalctl command:
 
     $ journalctl -k -n 17
     usb 2-2.4: new full-speed USB device number 29 using xhci_hcd
-    usb 2-2.4: New USB device found, idVendor=2fe3, idProduct=0100, bcdDevice= 0.11
+    usb 2-2.4: New USB device found, idVendor=2fe3, idProduct=0008, bcdDevice= 2.03
     usb 2-2.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
     usb 2-2.4: Product: Zephyr MSC sample
     usb 2-2.4: Manufacturer: ZEPHYR
-    usb 2-2.4: SerialNumber: 0.01
+    usb 2-2.4: SerialNumber: 86FE679A598AC47A
     usb-storage 2-2.4:1.0: USB Mass Storage device detected
     scsi host3: usb-storage 2-2.4:1.0
     scsi 3:0:0:0: Direct-Access     ZEPHYR   ZEPHYR USB DISK  0.01 PQ: 0 ANSI: 0 CCS
@@ -79,9 +79,7 @@ nrf52840dk_nrf52840 Example
 
 This board configures to use the external 64 MiBi QSPI flash chip with a
 64 KiBy `littlefs`_ partition compatible with the one produced by the
-:ref:`littlefs-sample`.  While a FAT-based file system can be mounted by
-many systems automatically, mounting the littlefs file system on a Linux
-or FreeBSD system can be accomplished using the `littlefs-FUSE`_ utility.
+:ref:`littlefs-sample`.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/subsys/usb/mass
@@ -113,7 +111,47 @@ different):
       F 5 newfile
     End of files
 
-Determine the local device name from the system log, e.g.:
+For information on mounting littlefs file system on Linux or FreeBSD
+systems refer to the "littlefs Usage" section below.
+
+adafruit_feather_nrf52840 Example
+=================================
+
+This board configures to use the external 16 MiBi QSPI flash chip with a
+2 MiBy FAT partition.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/subsys/usb/mass
+   :board: adafruit_feather_nrf52840
+   :goals: build
+   :compact:
+
+After you have built and flashed the sample app image to your board,
+connect the board's USB connector to a host capable of mounting FAT
+drives. The output to the console will look something like this
+(file system contents will be different):
+
+.. code-block:: none
+
+    *** Booting Zephyr OS build zephyr-v2.3.0-1991-g4c8d1496eafb  ***
+    Area 4 at 0x0 on GD25Q16 for 2097152 bytes
+    Mount /NAND:: 0
+    /NAND:: bsize = 512 ; frsize = 1024 ; blocks = 2028 ; bfree = 1901
+    /NAND: opendir: 0
+      F 0 SAMPLE.TXT
+    End of files
+    [00:00:00.077,423] <inf> main: The device is put in USB mass storage mode.
+
+On most operating systems the drive will be automatically mounted.
+
+littlefs Usage
+==============
+
+While a FAT-based file system can be mounted by many systems automatically,
+mounting the littlefs file system on a Linux or FreeBSD system can be
+accomplished using the `littlefs-FUSE`_ utility.
+
+First determine the local device name from the system log, e.g.:
 
 .. code-block:: none
 

@@ -30,7 +30,7 @@ LOG_MODULE_REGISTER(modem_iface_uart, CONFIG_MODEM_LOG_LEVEL);
  */
 static void modem_iface_uart_flush(struct modem_iface *iface)
 {
-	u8_t c;
+	uint8_t c;
 
 	while (uart_fifo_read(iface->dev, &c, 1) > 0) {
 		continue;
@@ -47,11 +47,14 @@ static void modem_iface_uart_flush(struct modem_iface *iface)
  *
  * @retval None.
  */
-static void modem_iface_uart_isr(struct device *uart_dev)
+static void modem_iface_uart_isr(const struct device *uart_dev,
+				 void *user_data)
 {
 	struct modem_context *ctx;
 	struct modem_iface_uart_data *data;
 	int rx = 0, ret;
+
+	ARG_UNUSED(user_data);
 
 	/* lookup the modem context */
 	ctx = modem_context_from_iface_dev(uart_dev);
@@ -84,7 +87,7 @@ static void modem_iface_uart_isr(struct device *uart_dev)
 }
 
 static int modem_iface_uart_read(struct modem_iface *iface,
-				 u8_t *buf, size_t size, size_t *bytes_read)
+				 uint8_t *buf, size_t size, size_t *bytes_read)
 {
 	struct modem_iface_uart_data *data;
 
@@ -104,7 +107,7 @@ static int modem_iface_uart_read(struct modem_iface *iface,
 }
 
 static int modem_iface_uart_write(struct modem_iface *iface,
-				  const u8_t *buf, size_t size)
+				  const uint8_t *buf, size_t size)
 {
 	if (!iface || !iface->iface_data) {
 		return -EINVAL;

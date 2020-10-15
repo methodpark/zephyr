@@ -38,8 +38,8 @@ static void test_cmd_help(void)
 	test_shell_execute_cmd("help", 0);
 	test_shell_execute_cmd("help -h", 1);
 	test_shell_execute_cmd("help --help", 1);
-	test_shell_execute_cmd("help dummy", 0);
-	test_shell_execute_cmd("help dummy dummy", 0);
+	test_shell_execute_cmd("help dummy", -EINVAL);
+	test_shell_execute_cmd("help dummy dummy", -EINVAL);
 }
 
 static void test_cmd_clear(void)
@@ -327,7 +327,7 @@ static void test_shell_fprintf(void)
 	zassert_not_null(shell, "Failed to get shell");
 
 	/* Clear the output buffer */
-	shell_backend_dummy_get_output(shell, &size);
+	shell_backend_dummy_clear_output(shell);
 
 	shell_fprintf(shell, SHELL_VT100_COLOR_DEFAULT, "testing %d %s %c",
 		      1, "2", '3');
@@ -370,6 +370,23 @@ static void test_raw_arg(void)
 	test_shell_execute_cmd("test_cmd_raw_arg", 0);
 	test_shell_execute_cmd("select test_cmd_raw_arg", 0);
 	test_shell_execute_cmd("aaa \"\" bbb", 0);
+	shell_set_root_cmd(NULL);
+}
+
+static int cmd_dummy(const struct shell *shell, size_t argc, char **argv)
+{
+	return 0;
+}
+
+SHELL_CMD_REGISTER(dummy, NULL, NULL, cmd_dummy);
+
+static void test_max_argc(void)
+{
+	BUILD_ASSERT(CONFIG_SHELL_ARGC_MAX == 12,
+		     "Unexpected test configuration.");
+
+	test_shell_execute_cmd("dummy 1 2 3 4 5 6 7 8 9 10 11", 0);
+	test_shell_execute_cmd("dummy 1 2 3 4 5 6 7 8 9 10 11 12", -ENOEXEC);
 }
 
 void test_main(void)
@@ -386,8 +403,12 @@ void test_main(void)
 			ztest_unit_test(test_shell_wildcards_dynamic),
 			ztest_unit_test(test_shell_fprintf),
 			ztest_unit_test(test_set_root_cmd),
-			ztest_unit_test(test_raw_arg)
+			ztest_unit_test(test_raw_arg),
+			ztest_unit_test(test_max_argc)
 			);
+
+	/* Let the shell backend initialize. */
+	k_msleep(20);
 
 	ztest_run_test_suite(shell_test_suite);
 }

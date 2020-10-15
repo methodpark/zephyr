@@ -28,9 +28,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <toolchain.h>
 
 #ifndef ULLONG_MAX
-# define ULLONG_MAX ((u64_t) -1) /* 2^64-1 */
+# define ULLONG_MAX ((uint64_t) -1) /* 2^64-1 */
 #endif
 
 #ifndef MIN
@@ -159,7 +160,7 @@ static const char tokens[256] = {
 
 
 static const
-s8_t unhex[256] = {
+int8_t unhex[256] = {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -513,8 +514,8 @@ int header_states(struct http_parser *parser, const char *data, size_t len,
 		break;
 
 	case h_content_length: {
-		u64_t t;
-		u64_t value;
+		uint64_t t;
+		uint64_t value;
 
 		if (ch == ' ') {
 			break;
@@ -713,7 +714,7 @@ int parser_execute(struct http_parser *parser,
 	const char *url_mark = 0;
 	const char *body_mark = 0;
 	const char *status_mark = 0;
-	s8_t unhex_val;
+	int8_t unhex_val;
 	int rc;
 	char ch;
 	char c;
@@ -1169,7 +1170,7 @@ reexecute:
 				; /* nada */
 			} else if (IS_ALPHA(ch)) {
 
-				u64_t sw_option = parser->method << 16 |
+				uint64_t sw_option = parser->method << 16 |
 						     parser->index << 8 | ch;
 				switch (sw_option) {
 				case (HTTP_POST << 16 | 1 << 8 | 'U'):
@@ -1569,7 +1570,7 @@ reexecute:
 				break;
 			}
 
-		/* FALLTHROUGH */
+			__fallthrough;
 
 		case s_header_value_start: {
 			MARK(header_value);
@@ -1858,6 +1859,7 @@ reexecute:
 
 				case 2:
 					parser->upgrade = 1U;
+					__fallthrough;
 
 				case 1:
 					parser->flags |= F_SKIPBODY;
@@ -1943,8 +1945,8 @@ reexecute:
 		}
 
 		case s_body_identity: {
-			u64_t to_read = MIN(parser->content_length,
-					       (u64_t) ((data + len) - p));
+			uint64_t to_read = MIN(parser->content_length,
+					       (uint64_t) ((data + len) - p));
 
 			assert(parser->content_length != 0U
 			       && parser->content_length != ULLONG_MAX);
@@ -2039,7 +2041,7 @@ reexecute:
 		}
 
 		case s_chunk_size: {
-			u64_t t;
+			uint64_t t;
 
 			assert(parser->flags & F_CHUNKED);
 
@@ -2067,7 +2069,7 @@ reexecute:
 			/* Overflow? Test against a conservative limit for
 			 * simplicity.
 			 */
-			u64_t ulong_value = (ULLONG_MAX - 16) / 16;
+			uint64_t ulong_value = (ULLONG_MAX - 16) / 16;
 
 			if (UNLIKELY(ulong_value < parser->content_length)) {
 				SET_ERRNO(HPE_INVALID_CONTENT_LENGTH);
@@ -2116,8 +2118,8 @@ reexecute:
 		}
 
 		case s_chunk_data: {
-			u64_t to_read = MIN(parser->content_length,
-					       (u64_t) ((data + len) - p));
+			uint64_t to_read = MIN(parser->content_length,
+					       (uint64_t) ((data + len) - p));
 
 			assert(parser->flags & F_CHUNKED);
 			assert(parser->content_length != 0U

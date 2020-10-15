@@ -181,14 +181,29 @@ static void release_file_data(struct fs_file_t *fp)
 	fp->filep = NULL;
 }
 
-static int littlefs_open(struct fs_file_t *fp, const char *path)
+static int lfs_flags_from_zephyr(unsigned int zflags)
+{
+	int flags = (zflags & FS_O_CREATE) ? LFS_O_CREAT : 0;
+
+	/* LFS_O_READONLY and LFS_O_WRONLY can be selected at the same time,
+	 * this is not a mistake, together they create RDWR access.
+	 */
+	flags |= (zflags & FS_O_READ) ? LFS_O_RDONLY : 0;
+	flags |= (zflags & FS_O_WRITE) ? LFS_O_WRONLY : 0;
+
+	flags |= (zflags & FS_O_APPEND) ? LFS_O_APPEND : 0;
+
+	return flags;
+}
+
+static int littlefs_open(struct fs_file_t *fp, const char *path,
+			 fs_mode_t zflags)
 {
 	struct fs_littlefs *fs = fp->mp->fs_data;
 	struct lfs *lfs = &fs->lfs;
-	int flags = LFS_O_CREAT | LFS_O_RDWR;
-	int ret;
+	int flags = lfs_flags_from_zephyr(zflags);
+	int ret = k_mem_slab_alloc(&file_data_pool, &fp->filep, K_NO_WAIT);
 
-	ret = k_mem_slab_alloc(&file_data_pool, &fp->filep, K_NO_WAIT);
 	if (ret != 0) {
 		return ret;
 	}
@@ -521,7 +536,7 @@ static lfs_size_t get_block_size(const struct flash_area *fa)
 		.area = fa,
 		.max_size = 0,
 	};
-	struct device *dev = flash_area_get_device(fa);
+	const struct device *dev = flash_area_get_device(fa);
 
 	flash_page_foreach(dev, get_page_cb, &ctx);
 
@@ -533,7 +548,7 @@ static int littlefs_mount(struct fs_mount_t *mountp)
 	int ret;
 	struct fs_littlefs *fs = mountp->fs_data;
 	unsigned int area_id = (uintptr_t)mountp->storage_dev;
-	struct device *dev;
+	const struct device *dev;
 
 	LOG_INF("LittleFS version %u.%u, disk version %u.%u",
 		LFS_VERSION_MAJOR, LFS_VERSION_MINOR,
@@ -555,8 +570,8 @@ static int littlefs_mount(struct fs_mount_t *mountp)
 		goto out;
 	}
 	LOG_DBG("FS area %u at 0x%x for %u bytes",
-		area_id, (u32_t)fs->area->fa_off,
-		(u32_t)fs->area->fa_size);
+		area_id, (uint32_t)fs->area->fa_off,
+		(uint32_t)fs->area->fa_size);
 
 	dev = flash_area_get_device(fs->area);
 	if (dev == NULL) {
@@ -601,7 +616,7 @@ static int littlefs_mount(struct fs_mount_t *mountp)
 		goto out;
 	}
 
-	s32_t block_cycles = lcp->block_cycles;
+	int32_t block_cycles = lcp->block_cycles;
 
 	if (block_cycles == 0) {
 		block_cycles = CONFIG_FS_LITTLEFS_BLOCK_CYCLES;
@@ -628,7 +643,7 @@ static int littlefs_mount(struct fs_mount_t *mountp)
 	lfs_size_t block_count = fs->area->fa_size / block_size;
 
 	LOG_INF("FS at %s:0x%x is %u 0x%x-byte blocks with %u cycle",
-		dev->name, (u32_t)fs->area->fa_off,
+		dev->name, (uint32_t)fs->area->fa_off,
 		block_count, block_size, block_cycles);
 	LOG_INF("sizes: rd %u ; pr %u ; ca %u ; la %u",
 		read_size, prog_size, cache_size, lookahead_size);
@@ -707,7 +722,7 @@ static int littlefs_unmount(struct fs_mount_t *mountp)
 }
 
 /* File system interface */
-static struct fs_file_system_t littlefs_fs = {
+static const struct fs_file_system_t littlefs_fs = {
 	.open = littlefs_open,
 	.close = littlefs_close,
 	.read = littlefs_read,
@@ -728,10 +743,10 @@ static struct fs_file_system_t littlefs_fs = {
 	.statvfs = littlefs_statvfs,
 };
 
-static int littlefs_init(struct device *dev)
+static int littlefs_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 	return fs_register(FS_LITTLEFS, &littlefs_fs);
 }
 
-SYS_INIT(littlefs_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(littlefs_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);

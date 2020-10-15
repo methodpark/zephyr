@@ -23,7 +23,7 @@ static const struct pin_config pinconf[] = {
 	{STM32_PIN_PA3, STM32F4_PINMUX_FUNC_PA3_USART2_RX},
 #endif
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm2), okay) && CONFIG_PWM
-	{STM32_PIN_PA0, STM32F4_PINMUX_FUNC_PA0_PWM2_CH1},
+	{STM32_PIN_PA5, STM32F4_PINMUX_FUNC_PA5_PWM2_CH1},
 #endif
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && CONFIG_I2C
 	{STM32_PIN_PB8, STM32F4_PINMUX_FUNC_PB8_I2C1_SCL},
@@ -50,7 +50,7 @@ static const struct pin_config pinconf[] = {
 #endif
 };
 
-static int pinmux_stm32_init(struct device *port)
+static int pinmux_stm32_init(const struct device *port)
 {
 	ARG_UNUSED(port);
 

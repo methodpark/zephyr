@@ -15,7 +15,7 @@ K_THREAD_STACK_EXTERN(ustack);
 
 void spin_for_ms(int ms)
 {
-	u32_t t32 = k_uptime_get_32();
+	uint32_t t32 = k_uptime_get_32();
 
 	while (k_uptime_get_32() - t32 < ms) {
 		/* In the posix arch, a busy loop takes no time, so
@@ -49,6 +49,7 @@ void test_main(void)
 			 ztest_unit_test(test_bad_priorities),
 			 ztest_unit_test(test_priority_cooperative),
 			 ztest_unit_test(test_priority_preemptible),
+			 ztest_1cpu_unit_test(test_priority_preemptible_wait_prio),
 			 ztest_unit_test(test_yield_cooperative),
 			 ztest_unit_test(test_sleep_cooperative),
 			 ztest_unit_test(test_sleep_wakeup_preemptible),

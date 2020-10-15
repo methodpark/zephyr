@@ -14,6 +14,8 @@
 #include <drivers/timer/system_timer.h>
 #include <stdbool.h>
 #include <kernel_internal.h>
+#include <logging/log.h>
+LOG_MODULE_DECLARE(os);
 
 /* Maximum time between the time a self-aborting thread flags itself
  * DEAD and the last read or write to its stack memory (i.e. the time
@@ -54,6 +56,8 @@
 struct z_kernel _kernel;
 
 static struct k_spinlock sched_spinlock;
+
+static void update_cache(int);
 
 #define LOCKED(lck) for (k_spinlock_key_t __i = {},			\
 					  __key = k_spin_lock(lck);	\
@@ -262,6 +266,16 @@ static ALWAYS_INLINE struct k_thread *next_up(void)
 #endif
 }
 
+static void move_thread_to_end_of_prio_q(struct k_thread *thread)
+{
+	if (z_is_thread_queued(thread)) {
+		_priq_run_remove(&_kernel.ready_q.runq, thread);
+	}
+	_priq_run_add(&_kernel.ready_q.runq, thread);
+	z_mark_thread_as_queued(thread);
+	update_cache(thread == _current);
+}
+
 #ifdef CONFIG_TIMESLICING
 
 static int slice_time;
@@ -288,7 +302,7 @@ void z_reset_time_slice(void)
 	}
 }
 
-void k_sched_time_slice_set(s32_t slice, int prio)
+void k_sched_time_slice_set(int32_t slice, int prio)
 {
 	LOCKED(&sched_spinlock) {
 		_current_cpu->slice_ticks = 0;
@@ -301,17 +315,27 @@ void k_sched_time_slice_set(s32_t slice, int prio)
 static inline int sliceable(struct k_thread *thread)
 {
 	return is_preempt(thread)
+		&& !z_is_thread_prevented_from_running(thread)
 		&& !z_is_prio_higher(thread->base.prio, slice_max_prio)
-		&& !z_is_idle_thread_object(thread)
-		&& !z_is_thread_timeout_active(thread);
+		&& !z_is_idle_thread_object(thread);
 }
 
 /* Called out of each timer interrupt */
 void z_time_slice(int ticks)
 {
+	/* Hold sched_spinlock, so that activity on another CPU
+	 * (like a call to k_thread_abort() at just the wrong time)
+	 * won't affect the correctness of the decisions made here.
+	 * Also prevents any nested interrupts from changing
+	 * thread state to avoid similar issues, since this would
+	 * normally run with IRQs enabled.
+	 */
+	k_spinlock_key_t key = k_spin_lock(&sched_spinlock);
+
 #ifdef CONFIG_SWAP_NONATOMIC
 	if (pending_current == _current) {
 		z_reset_time_slice();
+		k_spin_unlock(&sched_spinlock, key);
 		return;
 	}
 	pending_current = NULL;
@@ -319,7 +343,7 @@ void z_time_slice(int ticks)
 
 	if (slice_time && sliceable(_current)) {
 		if (ticks >= _current_cpu->slice_ticks) {
-			z_move_thread_to_end_of_prio_q(_current);
+			move_thread_to_end_of_prio_q(_current);
 			z_reset_time_slice();
 		} else {
 			_current_cpu->slice_ticks -= ticks;
@@ -327,6 +351,7 @@ void z_time_slice(int ticks)
 	} else {
 		_current_cpu->slice_ticks = 0;
 	}
+	k_spin_unlock(&sched_spinlock, key);
 }
 #endif
 
@@ -399,12 +424,7 @@ void z_ready_thread(struct k_thread *thread)
 void z_move_thread_to_end_of_prio_q(struct k_thread *thread)
 {
 	LOCKED(&sched_spinlock) {
-		if (z_is_thread_queued(thread)) {
-			_priq_run_remove(&_kernel.ready_q.runq, thread);
-		}
-		_priq_run_add(&_kernel.ready_q.runq, thread);
-		z_mark_thread_as_queued(thread);
-		update_cache(thread == _current);
+		move_thread_to_end_of_prio_q(thread);
 	}
 }
 
@@ -477,6 +497,9 @@ static _wait_q_t *pended_on(struct k_thread *thread)
 
 void z_thread_single_abort(struct k_thread *thread)
 {
+	__ASSERT(!(thread->base.user_options & K_ESSENTIAL),
+		 "essential thread aborted");
+
 	if (thread->fn_abort != NULL) {
 		thread->fn_abort();
 	}
@@ -506,7 +529,7 @@ void z_thread_single_abort(struct k_thread *thread)
 			}
 		}
 
-		u32_t mask = _THREAD_DEAD;
+		uint32_t mask = _THREAD_DEAD;
 
 		/* If the abort is happening in interrupt context,
 		 * that means that execution will never return to the
@@ -549,9 +572,9 @@ void z_thread_single_abort(struct k_thread *thread)
 			arch_thread_return_value_set(waiter, 0);
 			ready_thread(waiter);
 		}
+		sys_trace_thread_abort(thread);
+		z_thread_monitor_exit(thread);
 	}
-
-	sys_trace_thread_abort(thread);
 }
 
 static void unready_thread(struct k_thread *thread)
@@ -624,12 +647,17 @@ ALWAYS_INLINE struct k_thread *z_find_first_thread_to_unpend(_wait_q_t *wait_q,
 	return ret;
 }
 
+static inline void unpend_thread_no_timeout(struct k_thread *thread)
+{
+	_priq_wait_remove(&pended_on(thread)->waitq, thread);
+	z_mark_thread_as_not_pending(thread);
+	thread->base.pended_on = NULL;
+}
+
 ALWAYS_INLINE void z_unpend_thread_no_timeout(struct k_thread *thread)
 {
 	LOCKED(&sched_spinlock) {
-		_priq_wait_remove(&pended_on(thread)->waitq, thread);
-		z_mark_thread_as_not_pending(thread);
-		thread->base.pended_on = NULL;
+		unpend_thread_no_timeout(thread);
 	}
 }
 
@@ -637,19 +665,21 @@ ALWAYS_INLINE void z_unpend_thread_no_timeout(struct k_thread *thread)
 /* Timeout handler for *_thread_timeout() APIs */
 void z_thread_timeout(struct _timeout *timeout)
 {
-	struct k_thread *thread = CONTAINER_OF(timeout,
-					       struct k_thread, base.timeout);
+	LOCKED(&sched_spinlock) {
+		struct k_thread *thread = CONTAINER_OF(timeout,
+						struct k_thread, base.timeout);
 
-	if (thread->base.pended_on != NULL) {
-		z_unpend_thread_no_timeout(thread);
+		if (thread->base.pended_on != NULL) {
+			unpend_thread_no_timeout(thread);
+		}
+		z_mark_thread_as_started(thread);
+		z_mark_thread_as_not_suspended(thread);
+		ready_thread(thread);
 	}
-	z_mark_thread_as_started(thread);
-	z_mark_thread_as_not_suspended(thread);
-	z_ready_thread(thread);
 }
 #endif
 
-int z_pend_curr_irqlock(u32_t key, _wait_q_t *wait_q, k_timeout_t timeout)
+int z_pend_curr_irqlock(uint32_t key, _wait_q_t *wait_q, k_timeout_t timeout)
 {
 	pend(_current, wait_q, timeout);
 
@@ -737,7 +767,7 @@ void z_thread_priority_set(struct k_thread *thread, int prio)
 	}
 }
 
-static inline int resched(u32_t key)
+static inline int resched(uint32_t key)
 {
 #ifdef CONFIG_SMP
 	_current_cpu->swap_ok = 0;
@@ -746,16 +776,34 @@ static inline int resched(u32_t key)
 	return arch_irq_unlocked(key) && !arch_is_in_isr();
 }
 
+/*
+ * Check if the next ready thread is the same as the current thread
+ * and save the trip if true.
+ */
+static inline bool need_swap(void)
+{
+	/* the SMP case will be handled in C based z_swap() */
+#ifdef CONFIG_SMP
+	return true;
+#else
+	struct k_thread *new_thread;
+
+	/* Check if the next ready thread is the same as the current thread */
+	new_thread = z_get_next_ready_thread();
+	return new_thread != _current;
+#endif
+}
+
 void z_reschedule(struct k_spinlock *lock, k_spinlock_key_t key)
 {
-	if (resched(key.key)) {
+	if (resched(key.key) && need_swap()) {
 		z_swap(lock, key);
 	} else {
 		k_spin_unlock(lock, key);
 	}
 }
 
-void z_reschedule_irqlock(u32_t key)
+void z_reschedule_irqlock(uint32_t key)
 {
 	if (resched(key)) {
 		z_swap_irqlock(key);
@@ -782,7 +830,7 @@ void k_sched_unlock(void)
 		update_cache(0);
 	}
 
-	K_DEBUG("scheduler unlocked (%p:%d)\n",
+	LOG_DBG("scheduler unlocked (%p:%d)",
 		_current, _current->base.sched_locked);
 
 	z_reschedule_unlocked();
@@ -805,6 +853,7 @@ struct k_thread *z_get_next_ready_thread(void)
 /* Just a wrapper around _current = xxx with tracing */
 static inline void set_current(struct k_thread *new_thread)
 {
+	sys_trace_thread_switched_out();
 	_current_cpu->current = new_thread;
 }
 
@@ -838,7 +887,10 @@ void *z_get_next_switch_handle(void *interrupted)
 		}
 	}
 #else
-	set_current(z_get_next_ready_thread());
+	struct k_thread *thread = z_get_next_ready_thread();
+	if (_current != thread) {
+		set_current(thread);
+	}
 #endif
 
 	wait_for_switch(_current);
@@ -1076,7 +1128,7 @@ static inline void z_vrfy_k_thread_priority_set(k_tid_t thread, int prio)
 	Z_OOPS(Z_SYSCALL_OBJ(thread, K_OBJ_THREAD));
 	Z_OOPS(Z_SYSCALL_VERIFY_MSG(_is_valid_prio(prio, NULL),
 				    "invalid thread priority %d", prio));
-	Z_OOPS(Z_SYSCALL_VERIFY_MSG((s8_t)prio >= thread->base.prio,
+	Z_OOPS(Z_SYSCALL_VERIFY_MSG((int8_t)prio >= thread->base.prio,
 				    "thread priority may only be downgraded (%d < %d)",
 				    prio, thread->base.prio));
 
@@ -1142,14 +1194,14 @@ static inline void z_vrfy_k_yield(void)
 #include <syscalls/k_yield_mrsh.c>
 #endif
 
-static s32_t z_tick_sleep(s32_t ticks)
+static int32_t z_tick_sleep(int32_t ticks)
 {
 #ifdef CONFIG_MULTITHREADING
-	u32_t expected_wakeup_time;
+	uint32_t expected_wakeup_time;
 
 	__ASSERT(!arch_is_in_isr(), "");
 
-	K_DEBUG("thread %p for %d ticks\n", _current, ticks);
+	LOG_DBG("thread %p for %d ticks", _current, ticks);
 
 	/* wait of 0 ms is treated as a 'yield' */
 	if (ticks == 0) {
@@ -1168,21 +1220,16 @@ static s32_t z_tick_sleep(s32_t ticks)
 
 	expected_wakeup_time = ticks + z_tick_get_32();
 
-	/* Spinlock purely for local interrupt locking to prevent us
-	 * from being interrupted while _current is in an intermediate
-	 * state.  Should unify this implementation with pend().
-	 */
-	struct k_spinlock local_lock = {};
-	k_spinlock_key_t key = k_spin_lock(&local_lock);
+	k_spinlock_key_t key = k_spin_lock(&sched_spinlock);
 
 #if defined(CONFIG_TIMESLICING) && defined(CONFIG_SWAP_NONATOMIC)
 	pending_current = _current;
 #endif
-	z_remove_thread_from_ready_q(_current);
+	unready_thread(_current);
 	z_add_thread_timeout(_current, timeout);
 	z_mark_thread_as_suspended(_current);
 
-	(void)z_swap(&local_lock, key);
+	(void)z_swap(&sched_spinlock, key);
 
 	__ASSERT(!z_is_thread_state_set(_current, _THREAD_SUSPENDED), "");
 
@@ -1195,15 +1242,16 @@ static s32_t z_tick_sleep(s32_t ticks)
 	return 0;
 }
 
-s32_t z_impl_k_sleep(k_timeout_t timeout)
+int32_t z_impl_k_sleep(k_timeout_t timeout)
 {
 	k_ticks_t ticks;
 
 	__ASSERT(!arch_is_in_isr(), "");
+	sys_trace_void(SYS_TRACE_ID_SLEEP);
 
 	if (K_TIMEOUT_EQ(timeout, K_FOREVER)) {
 		k_thread_suspend(_current);
-		return (s32_t) K_TICKS_FOREVER;
+		return (int32_t) K_TICKS_FOREVER;
 	}
 
 #ifdef CONFIG_LEGACY_TIMEOUT_API
@@ -1213,20 +1261,21 @@ s32_t z_impl_k_sleep(k_timeout_t timeout)
 #endif
 
 	ticks = z_tick_sleep(ticks);
+	sys_trace_end_call(SYS_TRACE_ID_SLEEP);
 	return k_ticks_to_ms_floor64(ticks);
 }
 
 #ifdef CONFIG_USERSPACE
-static inline s32_t z_vrfy_k_sleep(k_timeout_t timeout)
+static inline int32_t z_vrfy_k_sleep(k_timeout_t timeout)
 {
 	return z_impl_k_sleep(timeout);
 }
 #include <syscalls/k_sleep_mrsh.c>
 #endif
 
-s32_t z_impl_k_usleep(int us)
+int32_t z_impl_k_usleep(int us)
 {
-	s32_t ticks;
+	int32_t ticks;
 
 	ticks = k_us_to_ticks_ceil64(us);
 	ticks = z_tick_sleep(ticks);
@@ -1234,7 +1283,7 @@ s32_t z_impl_k_usleep(int us)
 }
 
 #ifdef CONFIG_USERSPACE
-static inline s32_t z_vrfy_k_usleep(int us)
+static inline int32_t z_vrfy_k_usleep(int us)
 {
 	return z_impl_k_usleep(us);
 }
@@ -1266,12 +1315,19 @@ void z_impl_k_wakeup(k_tid_t thread)
 	}
 }
 
+#ifdef CONFIG_TRACE_SCHED_IPI
+extern void z_trace_sched_ipi(void);
+#endif
+
 #ifdef CONFIG_SMP
 void z_sched_ipi(void)
 {
 	/* NOTE: When adding code to this, make sure this is called
 	 * at appropriate location when !CONFIG_SCHED_IPI_SUPPORTED.
 	 */
+#ifdef CONFIG_TRACE_SCHED_IPI
+	z_trace_sched_ipi();
+#endif
 }
 
 void z_sched_abort(struct k_thread *thread)
@@ -1381,7 +1437,7 @@ BUILD_ASSERT(CONFIG_MP_NUM_CPUS <= 8, "Too many CPUs for mask word");
 # endif
 
 
-static int cpu_mask_mod(k_tid_t thread, u32_t enable_mask, u32_t disable_mask)
+static int cpu_mask_mod(k_tid_t thread, uint32_t enable_mask, uint32_t disable_mask)
 {
 	int ret = 0;
 

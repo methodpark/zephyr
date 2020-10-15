@@ -41,13 +41,13 @@ static struct gpio_callback button_callback;
 #endif
 
 struct led_indicator {
-	struct device *dev;
+	const struct device *dev;
 	gpio_pin_t pin;
 };
 
 static struct led_indicator led_green;
 static struct led_indicator led_red;
-static u32_t counter;
+static uint32_t counter;
 
 /**
  * @brief Callback for setting LED indicator state.
@@ -113,7 +113,7 @@ static void config_leds(CO_NMT_t *nmt)
  */
 static CO_SDO_abortCode_t odf_2102(CO_ODF_arg_t *odf_arg)
 {
-	u32_t value;
+	uint32_t value;
 
 	value = CO_getUint32(odf_arg->data);
 
@@ -127,7 +127,7 @@ static CO_SDO_abortCode_t odf_2102(CO_ODF_arg_t *odf_arg)
 
 	if (value != 0) {
 		/* Preserve old value */
-		memcpy(odf_arg->data, odf_arg->ODdataStorage, sizeof(u32_t));
+		memcpy(odf_arg->data, odf_arg->ODdataStorage, sizeof(uint32_t));
 		return CO_SDO_AB_DATA_TRANSF;
 	}
 
@@ -145,8 +145,9 @@ static CO_SDO_abortCode_t odf_2102(CO_ODF_arg_t *odf_arg)
  * @param pins GPIO pin mask that triggered the interrupt.
  */
 #ifdef BUTTON_PORT
-static void button_isr_callback(struct device *port, struct gpio_callback *cb,
-				u32_t pins)
+static void button_isr_callback(const struct device *port,
+				struct gpio_callback *cb,
+				uint32_t pins)
 {
 	counter++;
 }
@@ -160,7 +161,7 @@ static void button_isr_callback(struct device *port, struct gpio_callback *cb,
 static void config_button(void)
 {
 #ifdef BUTTON_PORT
-	struct device *dev;
+	const struct device *dev;
 	int err;
 
 	dev = device_get_binding(BUTTON_PORT);
@@ -201,14 +202,14 @@ void main(void)
 {
 	CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
 	CO_ReturnError_t err;
-	struct device *can;
-	u16_t timeout;
-	u32_t elapsed;
-	s64_t timestamp;
+	struct canopen_context can;
+	uint16_t timeout;
+	uint32_t elapsed;
+	int64_t timestamp;
 	int ret;
 
-	can = device_get_binding(CAN_INTERFACE);
-	if (!can) {
+	can.dev = device_get_binding(CAN_INTERFACE);
+	if (!can.dev) {
 		LOG_ERR("CAN interface not found");
 		return;
 	}
@@ -233,7 +234,7 @@ void main(void)
 	while (reset != CO_RESET_APP) {
 		elapsed =  0U; /* milliseconds */
 
-		err = CO_init(can, CONFIG_CANOPEN_NODE_ID, CAN_BITRATE);
+		err = CO_init(&can, CONFIG_CANOPEN_NODE_ID, CAN_BITRATE);
 		if (err != CO_ERROR_NO) {
 			LOG_ERR("CO_init failed (err = %d)", err);
 			return;
@@ -278,7 +279,7 @@ void main(void)
 				 * exact time elapsed.
 				 */
 				k_sleep(K_MSEC(timeout));
-				elapsed = (u32_t)k_uptime_delta(&timestamp);
+				elapsed = (uint32_t)k_uptime_delta(&timestamp);
 			} else {
 				/*
 				 * Do not sleep, more processing to be
@@ -295,6 +296,6 @@ void main(void)
 
 	LOG_INF("Resetting device");
 
-	CO_delete(CAN_INTERFACE);
+	CO_delete(&can);
 	sys_reboot(SYS_REBOOT_COLD);
 }

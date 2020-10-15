@@ -23,9 +23,9 @@ LOG_MODULE_REGISTER(soc);
 
 #define CAVS_INTC_NODE(n) DT_INST(n, intel_cavs_intc)
 
-void z_soc_irq_enable(u32_t irq)
+void z_soc_irq_enable(uint32_t irq)
 {
-	struct device *dev_cavs;
+	const struct device *dev_cavs;
 
 	switch (XTENSA_IRQ_NUMBER(irq)) {
 	case DT_IRQN(CAVS_INTC_NODE(0)):
@@ -61,9 +61,9 @@ void z_soc_irq_enable(u32_t irq)
 	irq_enable_next_level(dev_cavs, CAVS_IRQ_NUMBER(irq));
 }
 
-void z_soc_irq_disable(u32_t irq)
+void z_soc_irq_disable(uint32_t irq)
 {
-	struct device *dev_cavs;
+	const struct device *dev_cavs;
 
 	switch (XTENSA_IRQ_NUMBER(irq)) {
 	case DT_IRQN(CAVS_INTC_NODE(0)):
@@ -103,7 +103,7 @@ void z_soc_irq_disable(u32_t irq)
 
 int z_soc_irq_is_enabled(unsigned int irq)
 {
-	struct device *dev_cavs;
+	const struct device *dev_cavs;
 	int ret = 0;
 
 	switch (XTENSA_IRQ_NUMBER(irq)) {
@@ -140,8 +140,8 @@ out:
 
 #ifdef CONFIG_DYNAMIC_INTERRUPTS
 int z_soc_irq_connect_dynamic(unsigned int irq, unsigned int priority,
-			      void (*routine)(void *parameter),
-			      void *parameter, u32_t flags)
+			      void (*routine)(const void *parameter),
+			      const void *parameter, uint32_t flags)
 {
 	uint32_t table_idx;
 	uint32_t cavs_irq, cavs_idx;
@@ -226,7 +226,7 @@ static inline void soc_set_power_and_clock(void)
 	dsp_shim_regs->lpsctl = dsp_shim_regs->lpsctl;
 }
 
-static int soc_init(struct device *dev)
+static int soc_init(const struct device *dev)
 {
 	soc_set_power_and_clock();
 

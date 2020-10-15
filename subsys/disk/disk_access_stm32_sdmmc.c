@@ -23,13 +23,13 @@ struct stm32_sdmmc_priv {
 	struct gpio_callback cd_cb;
 	struct {
 		const char *name;
-		struct device *port;
+		const struct device *port;
 		int pin;
 		int flags;
 	} cd;
 	struct {
 		const char *name;
-		struct device *port;
+		const struct device *port;
 		int pin;
 		int flags;
 	} pe;
@@ -38,7 +38,7 @@ struct stm32_sdmmc_priv {
 
 static int stm32_sdmmc_clock_enable(struct stm32_sdmmc_priv *priv)
 {
-	struct device *clock;
+	const struct device *clock;
 
 #if CONFIG_SOC_SERIES_STM32L4X
 	LL_RCC_PLLSAI1_Disable();
@@ -71,7 +71,7 @@ static int stm32_sdmmc_clock_enable(struct stm32_sdmmc_priv *priv)
 
 static int stm32_sdmmc_clock_disable(struct stm32_sdmmc_priv *priv)
 {
-	struct device *clock;
+	const struct device *clock;
 
 	clock = device_get_binding(STM32_CLOCK_CONTROL_NAME);
 	if (!clock) {
@@ -84,8 +84,8 @@ static int stm32_sdmmc_clock_disable(struct stm32_sdmmc_priv *priv)
 
 static int stm32_sdmmc_access_init(struct disk_info *disk)
 {
-	struct device *dev = disk->dev;
-	struct stm32_sdmmc_priv *priv = dev->driver_data;
+	const struct device *dev = disk->dev;
+	struct stm32_sdmmc_priv *priv = dev->data;
 	int err;
 
 	if (priv->status == DISK_STATUS_OK) {
@@ -120,17 +120,17 @@ static void stm32_sdmmc_access_deinit(struct stm32_sdmmc_priv *priv)
 
 static int stm32_sdmmc_access_status(struct disk_info *disk)
 {
-	struct device *dev = disk->dev;
-	struct stm32_sdmmc_priv *priv = dev->driver_data;
+	const struct device *dev = disk->dev;
+	struct stm32_sdmmc_priv *priv = dev->data;
 
 	return priv->status;
 }
 
-static int stm32_sdmmc_access_read(struct disk_info *disk, u8_t *data_buf,
-				   u32_t start_sector, u32_t num_sector)
+static int stm32_sdmmc_access_read(struct disk_info *disk, uint8_t *data_buf,
+				   uint32_t start_sector, uint32_t num_sector)
 {
-	struct device *dev = disk->dev;
-	struct stm32_sdmmc_priv *priv = dev->driver_data;
+	const struct device *dev = disk->dev;
+	struct stm32_sdmmc_priv *priv = dev->data;
 	int err;
 
 	err = HAL_SD_ReadBlocks(&priv->hsd, data_buf, start_sector,
@@ -147,14 +147,14 @@ static int stm32_sdmmc_access_read(struct disk_info *disk, u8_t *data_buf,
 }
 
 static int stm32_sdmmc_access_write(struct disk_info *disk,
-				    const u8_t *data_buf,
-				    u32_t start_sector, u32_t num_sector)
+				    const uint8_t *data_buf,
+				    uint32_t start_sector, uint32_t num_sector)
 {
-	struct device *dev = disk->dev;
-	struct stm32_sdmmc_priv *priv = dev->driver_data;
+	const struct device *dev = disk->dev;
+	struct stm32_sdmmc_priv *priv = dev->data;
 	int err;
 
-	err = HAL_SD_WriteBlocks(&priv->hsd, (u8_t *)data_buf, start_sector,
+	err = HAL_SD_WriteBlocks(&priv->hsd, (uint8_t *)data_buf, start_sector,
 				 num_sector, 30000);
 	if (err != HAL_OK) {
 		LOG_ERR("sd write block failed %d", err);
@@ -166,11 +166,11 @@ static int stm32_sdmmc_access_write(struct disk_info *disk,
 	return 0;
 }
 
-static int stm32_sdmmc_access_ioctl(struct disk_info *disk, u8_t cmd,
+static int stm32_sdmmc_access_ioctl(struct disk_info *disk, uint8_t cmd,
 				    void *buff)
 {
-	struct device *dev = disk->dev;
-	struct stm32_sdmmc_priv *priv = dev->driver_data;
+	const struct device *dev = disk->dev;
+	struct stm32_sdmmc_priv *priv = dev->data;
 	HAL_SD_CardInfoTypeDef info;
 	int err;
 
@@ -180,17 +180,17 @@ static int stm32_sdmmc_access_ioctl(struct disk_info *disk, u8_t cmd,
 		if (err != HAL_OK) {
 			return -EIO;
 		}
-		*(u32_t *)buff = info.LogBlockNbr;
+		*(uint32_t *)buff = info.LogBlockNbr;
 		break;
 	case DISK_IOCTL_GET_SECTOR_SIZE:
 		err = HAL_SD_GetCardInfo(&priv->hsd, &info);
 		if (err != HAL_OK) {
 			return -EIO;
 		}
-		*(u32_t *)buff = info.LogBlockSize;
+		*(uint32_t *)buff = info.LogBlockSize;
 		break;
 	case DISK_IOCTL_GET_ERASE_BLOCK_SZ:
-		*(u32_t *)buff = 1;
+		*(uint32_t *)buff = 1;
 		break;
 	case DISK_IOCTL_CTRL_SYNC:
 		/* we use a blocking API, so nothing to do for sync */
@@ -251,9 +251,9 @@ static void stm32_sdmmc_cd_handler(struct k_work *item)
 	}
 }
 
-static void stm32_sdmmc_cd_callback(struct device *gpiodev,
+static void stm32_sdmmc_cd_callback(const struct device *gpiodev,
 				    struct gpio_callback *cb,
-				    u32_t pin)
+				    uint32_t pin)
 {
 	struct stm32_sdmmc_priv *priv = CONTAINER_OF(cb,
 						     struct stm32_sdmmc_priv,
@@ -350,9 +350,9 @@ static int stm32_sdmmc_pwr_uninit(struct stm32_sdmmc_priv *priv)
 	return 0;
 }
 
-static int disk_stm32_sdmmc_init(struct device *dev)
+static int disk_stm32_sdmmc_init(const struct device *dev)
 {
-	struct stm32_sdmmc_priv *priv = dev->driver_data;
+	struct stm32_sdmmc_priv *priv = dev->data;
 	int err;
 
 	k_work_init(&priv->work, stm32_sdmmc_cd_handler);

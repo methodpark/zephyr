@@ -90,10 +90,14 @@
 #error Timer type is not defined for this platform
 #endif
 
-/* Nios II and RISCV without CONFIG_RISCV_HAS_CPU_IDLE
- * do have a power saving instruction, so k_cpu_idle() returns immediately
+/* Cortex-M1, Nios II, and RISCV without CONFIG_RISCV_HAS_CPU_IDLE
+ * do have a power saving instruction, so k_cpu_idle() returns immediately.
+ *
+ * Includes workaround on QEMU aarch64, see
+ * https://github.com/zephyrproject-rtos/sdk-ng/issues/255
  */
-#if !defined(CONFIG_NIOS2) && \
+#if !defined(CONFIG_CPU_CORTEX_M1) && !defined(CONFIG_NIOS2) && \
+    !defined(CONFIG_SOC_QEMU_CORTEX_A53) && \
 	(!defined(CONFIG_RISCV) || defined(CONFIG_RISCV_HAS_CPU_IDLE))
 #define HAS_POWERSAVE_INSTRUCTION
 #endif
@@ -137,7 +141,7 @@ static ISR_INFO isr_info;
  *
  * @return N/A
  */
-static void isr_handler(void *data)
+static void isr_handler(const void *data)
 {
 	ARG_UNUSED(data);
 
@@ -243,6 +247,12 @@ static void _test_kernel_cpu_idle(int atomic)
 	int tms, tms2;
 	int i;
 
+	/* Align to ticks so the first iteration sleeps long enough
+	 * (k_timer_start() rounds its duration argument down, not up,
+	 * to a tick boundary)
+	 */
+	 k_usleep(1);
+
 	/* Set up a time to trigger events to exit idle mode */
 	k_timer_init(&idle_timer, idle_timer_expiry_function, NULL);
 
@@ -324,6 +334,13 @@ static void test_kernel_cpu_idle_atomic(void)
 
 static void test_kernel_cpu_idle(void)
 {
+/*
+ * Fixme: remove the skip code when sleep instruction in
+ * nsim_hs_smp is fixed.
+ */
+#if defined(CONFIG_SOC_NSIM) && defined(CONFIG_SMP)
+	ztest_test_skip();
+#endif
 	_test_kernel_cpu_idle(0);
 }
 
@@ -663,7 +680,7 @@ static void kernel_thread_entry(void *_thread_id, void *arg1, void *arg2)
  */
 struct timeout_order {
 	void *link_in_fifo;
-	s32_t timeout;
+	int32_t timeout;
 	int timeout_order;
 	int q_order;
 };
@@ -686,7 +703,7 @@ static struct k_thread timeout_threads[NUM_TIMEOUT_THREADS];
 /* a thread busy waits */
 static void busy_wait_thread(void *mseconds, void *arg2, void *arg3)
 {
-	u32_t usecs;
+	uint32_t usecs;
 
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
@@ -726,7 +743,7 @@ static void busy_wait_thread(void *mseconds, void *arg2, void *arg3)
 /* a thread sleeps and times out, then reports through a fifo */
 static void thread_sleep(void *delta, void *arg2, void *arg3)
 {
-	s64_t timestamp;
+	int64_t timestamp;
 	int timeout = POINTER_TO_INT(delta);
 
 	ARG_UNUSED(arg2);
@@ -771,7 +788,7 @@ static void delayed_thread(void *num, void *arg2, void *arg3)
  */
 static void test_busy_wait(void)
 {
-	s32_t timeout;
+	int32_t timeout;
 	int rv;
 
 	timeout = 20;           /* in ms */
@@ -796,7 +813,7 @@ static void test_busy_wait(void)
 static void test_k_sleep(void)
 {
 	struct timeout_order *data;
-	s32_t timeout;
+	int32_t timeout;
 	int rv;
 	int i;
 

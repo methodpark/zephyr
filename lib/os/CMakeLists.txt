@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-zephyr_sources_if_kconfig(base64.c)
+zephyr_sources_ifdef(CONFIG_BASE64 base64.c)
 
 zephyr_sources(
   crc32_sw.c
@@ -23,9 +23,12 @@ zephyr_sources(
   heap-validate.c
   )
 
+zephyr_sources_ifdef(CONFIG_MINIMAL_LIBC prf.c)
+zephyr_sources_ifdef(CONFIG_SHELL prf.c)
+
 zephyr_sources_ifdef(CONFIG_JSON_LIBRARY json.c)
 
-zephyr_sources_if_kconfig(ring_buffer.c)
+zephyr_sources_ifdef(CONFIG_RING_BUFFER ring_buffer.c)
 
 zephyr_sources_ifdef(CONFIG_ASSERT assert.c)
 

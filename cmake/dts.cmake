@@ -17,6 +17,13 @@ file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/include/generated)
 # See the Devicetree user guide in the Zephyr documentation for details.
 set(GEN_DEFINES_SCRIPT          ${ZEPHYR_BASE}/scripts/dts/gen_defines.py)
 set(ZEPHYR_DTS                  ${PROJECT_BINARY_DIR}/zephyr.dts)
+# This contains the edtlib.EDT object created from zephyr.dts in Python's
+# pickle data marshalling format (https://docs.python.org/3/library/pickle.html)
+#
+# Its existence is an implementation detail used to speed up further
+# use of the devicetree by processes that run later on in the build,
+# and should not be made part of the documentation.
+set(EDT_PICKLE                  ${PROJECT_BINARY_DIR}/edt.pickle)
 set(DEVICETREE_UNFIXED_H        ${PROJECT_BINARY_DIR}/include/generated/devicetree_unfixed.h)
 set(DEVICETREE_UNFIXED_LEGACY_H ${PROJECT_BINARY_DIR}/include/generated/devicetree_legacy_unfixed.h)
 set(DTS_POST_CPP                ${PROJECT_BINARY_DIR}/${BOARD}.dts.pre.tmp)
@@ -27,6 +34,8 @@ if(DEFINED DTS_COMMON_OVERLAYS)
   # TODO: remove this warning in version 1.16
   message(FATAL_ERROR "DTS_COMMON_OVERLAYS is no longer supported. Use DTC_OVERLAY_FILE instead.")
 endif()
+
+zephyr_file(APPLICATION_ROOT DTS_ROOT)
 
 # 'DTS_ROOT' is a list of directories where a directory tree with DT
 # files may be found. It always includes the application directory,
@@ -59,7 +68,11 @@ endif()
 if(SUPPORTS_DTS)
   if(DTC_OVERLAY_FILE)
     # Convert from space-separated files into file list
-    string(REPLACE " " ";" DTC_OVERLAY_FILE_AS_LIST ${DTC_OVERLAY_FILE})
+    string(REPLACE " " ";" DTC_OVERLAY_FILE_RAW_LIST ${DTC_OVERLAY_FILE})
+    foreach(file ${DTC_OVERLAY_FILE_RAW_LIST})
+      file(TO_CMAKE_PATH "${file}" cmake_path_file)
+      list(APPEND DTC_OVERLAY_FILE_AS_LIST ${cmake_path_file})
+    endforeach()
     list(APPEND
       dts_files
       ${DTC_OVERLAY_FILE_AS_LIST}
@@ -115,6 +128,10 @@ if(SUPPORTS_DTS)
   set(CACHED_DTS_ROOT_BINDINGS ${DTS_ROOT_BINDINGS} CACHE INTERNAL
     "DT bindings root directories")
 
+  if(NOT DEFINED CMAKE_DTS_PREPROCESSOR)
+    set(CMAKE_DTS_PREPROCESSOR ${CMAKE_C_COMPILER})
+  endif()
+
   # TODO: Cut down on CMake configuration time by avoiding
   # regeneration of devicetree_unfixed.h on every configure. How
   # challenging is this? What are the dts dependencies? We run the
@@ -126,13 +143,14 @@ if(SUPPORTS_DTS)
   # intermediary file *.dts.pre.tmp. Also, generate a dependency file
   # so that changes to DT sources are detected.
   execute_process(
-    COMMAND ${CMAKE_C_COMPILER}
+    COMMAND ${CMAKE_DTS_PREPROCESSOR}
     -x assembler-with-cpp
     -nostdinc
     ${DTS_ROOT_SYSTEM_INCLUDE_DIRS}
     ${DTC_INCLUDE_FLAG_FOR_DTS}  # include the DTS source and overlays
     ${NOSYSDEF_CFLAG}
     -D__DTS__
+    ${DTS_EXTRA_CPPFLAGS}
     -P
     -E   # Stop after preprocessing
     -MD  # Generate a dependency file as a side-effect
@@ -197,7 +215,7 @@ if(SUPPORTS_DTS)
   endif(DTC)
 
   #
-  # Run gen_defines.py to create a header file and zephyr.dts.
+  # Run gen_defines.py to create a header file, zephyr.dts, and edt.pickle.
   #
 
   set(CMD_EXTRACT ${PYTHON_EXECUTABLE} ${GEN_DEFINES_SCRIPT}
@@ -206,6 +224,7 @@ if(SUPPORTS_DTS)
   --bindings-dirs ${DTS_ROOT_BINDINGS}
   --header-out ${DEVICETREE_UNFIXED_H}
   --dts-out ${ZEPHYR_DTS} # As a debugging aid
+  --edt-pickle-out ${EDT_PICKLE}
   )
 
   #
@@ -214,9 +233,7 @@ if(SUPPORTS_DTS)
   #
 
   set(CMD_LEGACY_EXTRACT ${PYTHON_EXECUTABLE} ${ZEPHYR_BASE}/scripts/dts/gen_legacy_defines.py
-  --dts ${BOARD}.dts.pre.tmp
-  --dtc-flags '${EXTRA_DTC_FLAGS}'
-  --bindings-dirs ${DTS_ROOT_BINDINGS}
+  --edt-pickle ${EDT_PICKLE}
   --header-out ${DEVICETREE_UNFIXED_LEGACY_H}
   )
 

@@ -18,6 +18,12 @@ void sys_trace_isr_enter(void);
 void sys_trace_isr_exit(void);
 void sys_trace_isr_exit_to_scheduler(void);
 void sys_trace_idle(void);
+void sys_trace_semaphore_init(struct k_sem *sem);
+void sys_trace_semaphore_take(struct k_sem *sem);
+void sys_trace_semaphore_give(struct k_sem *sem);
+void sys_trace_mutex_init(struct k_mutex *mutex);
+void sys_trace_mutex_lock(struct k_mutex *mutex);
+void sys_trace_mutex_unlock(struct k_mutex *mutex);
 
 #define sys_trace_thread_priority_set(thread)
 
@@ -29,7 +35,7 @@ static inline void sys_trace_thread_info(struct k_thread *thread)
 
 	SEGGER_SYSVIEW_TASKINFO Info;
 
-	Info.TaskID = (u32_t)(uintptr_t)thread;
+	Info.TaskID = (uint32_t)(uintptr_t)thread;
 	Info.sName = name;
 	Info.Prio = thread->base.prio;
 	Info.StackBase = thread->stack_info.size;
@@ -39,7 +45,7 @@ static inline void sys_trace_thread_info(struct k_thread *thread)
 
 #define sys_trace_thread_create(thread)				       \
 	do {							       \
-		SEGGER_SYSVIEW_OnTaskCreate((u32_t)(uintptr_t)thread); \
+		SEGGER_SYSVIEW_OnTaskCreate((uint32_t)(uintptr_t)thread); \
 		sys_trace_thread_info(thread);			       \
 	} while (0)
 
@@ -52,10 +58,10 @@ static inline void sys_trace_thread_info(struct k_thread *thread)
 #define sys_trace_thread_resume(thread)
 
 #define sys_trace_thread_ready(thread) \
-	SEGGER_SYSVIEW_OnTaskStartReady((u32_t)(uintptr_t)thread)
+	SEGGER_SYSVIEW_OnTaskStartReady((uint32_t)(uintptr_t)thread)
 
 #define sys_trace_thread_pend(thread) \
-	SEGGER_SYSVIEW_OnTaskStopReady((u32_t)(uintptr_t)thread, 3 << 3)
+	SEGGER_SYSVIEW_OnTaskStopReady((uint32_t)(uintptr_t)thread, 3 << 3)
 
 #define sys_trace_void(id) SEGGER_SYSVIEW_RecordVoid(id)
 

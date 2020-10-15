@@ -154,6 +154,8 @@ testing:
   ignore_tags:
     Do not attempt to build (and therefore run) tests marked with this list of
     tags.
+  only_tags:
+    Only execute tests with this list of tags on a specific platform.
 
 Test Cases
 **********
@@ -201,14 +203,14 @@ explained in this document.
         tests:
           bluetooth.gatt:
             build_only: true
-            platform_whitelist: qemu_cortex_m3 qemu_x86
+            platform_allow: qemu_cortex_m3 qemu_x86
             tags: bluetooth
           bluetooth.gatt.br:
             build_only: true
             extra_args: CONF_FILE="prj_br.conf"
             filter: not CONFIG_DEBUG
             platform_exclude: up_squared
-            platform_whitelist: qemu_cortex_m3 qemu_x86
+            platform_allow: qemu_cortex_m3 qemu_x86
             tags: bluetooth
 
 
@@ -296,14 +298,23 @@ timeout: <number of seconds>
     Length of time to run test in QEMU before automatically killing it.
     Default to 60 seconds.
 
-arch_whitelist: <list of arches, such as x86, arm, arc>
+arch_allow: <list of arches, such as x86, arm, arc>
     Set of architectures that this test case should only be run for.
 
 arch_exclude: <list of arches, such as x86, arm, arc>
     Set of architectures that this test case should not run on.
 
-platform_whitelist: <list of platforms>
-    Set of platforms that this test case should only be run for.
+platform_allow: <list of platforms>
+    Set of platforms that this test case should only be run for. Do not use
+    this option to limit testing or building in CI due to time or resource
+    constraints, this option should only be used if the test or sample can
+    only be run on the allowed platform and nothing else.
+
+integration_platforms: <YML list of platforms/boards>
+    This option limits the scope to the listed platforms when sanitycheck is
+    invoked with the --integration option. Use this instead of
+    platform_allow if the goal is to limit scope due to timing or
+    resource constraints.
 
 platform_exclude: <list of platforms>
     Set of platforms that this test case should not run on.
@@ -426,7 +437,7 @@ filter: <expression>
         not (right associative)
         all comparison operators (non-associative)
 
-    arch_whitelist, arch_exclude, platform_whitelist, platform_exclude
+    arch_allow, arch_exclude, platform_allow, platform_exclude
     are all syntactic sugar for these expressions. For instance
 
         arch_exclude = x86 arc
@@ -458,6 +469,16 @@ To load arguments from a file, write '+' before the file name, e.g.,
 line break instead of white spaces.
 
 Most everyday users will run with no arguments.
+
+Running in Integration Mode
+***************************
+
+This mode is used in continuous integration (CI) and other automated
+environments used to give developers fast feedback on changes. The mode can
+be activated using the --integration option of sanitycheck and narrows down
+the scope of builds and tests if applicable to platforms defined under the
+integration keyword in the testcase definition file (testcase.yaml and
+sample.yaml).
 
 
 Running Tests on Hardware
@@ -573,3 +594,43 @@ and these tests will be executed on the boards that provide this fixture.
 
 .. figure:: fixtures.svg
    :figclass: align-center
+
+Notes
++++++
+
+It may be useful to annotate board descriptions in the hardware map file
+with additional information.  Use the "notes" keyword to do this.  For
+example::
+
+    - available: true
+      connected: false
+      fixtures:
+        - gpio_loopback
+      id: 000683290670
+      notes: An nrf5340pdk_nrf5340 is detected as an nrf52840dk_nrf52840 with no serial
+        port, and three serial ports with an unknown platform.  The board id of the serial
+        ports is not the same as the board id of the the development kit.  If you regenerate
+        this file you will need to update serial to reference the third port, and platform
+        to nrf5340pdk_nrf5340_cpuapp or another supported board target.
+      platform: nrf52840dk_nrf52840
+      product: J-Link
+      runner: jlink
+      serial: null
+
+Overriding Board Identifier
++++++++++++++++++++++++++++
+
+When (re-)generated the hardware map file will contain an "id" keyword
+that serves as the argument to ``--board-id`` when flashing.  In some
+cases the detected ID is not the correct one to use, for example when
+using an external J-Link probe.  The "probe_id" keyword overrides the
+"id" keyword for this purpose.   For example::
+
+    - available: true
+      connected: false
+      id: 0229000005d9ebc600000000000000000000000097969905
+      platform: mimxrt1060_evk
+      probe_id: 000609301751
+      product: DAPLink CMSIS-DAP
+      runner: jlink
+      serial: null

@@ -27,8 +27,8 @@ extern void CC1352R1_LAUNCHXL_shutDownExtFlash(void);
 
 void main(void)
 {
-	u32_t config, status;
-	struct device *gpiob;
+	uint32_t config, status;
+	const struct device *gpiob;
 
 	printk("\n%s system off demo\n", CONFIG_BOARD);
 

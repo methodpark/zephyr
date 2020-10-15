@@ -86,7 +86,7 @@ config LOG_MIPI_SYST_ENABLE
 
 if !LOG_MINIMAL
 
-menu "Prepend log message with function name"
+menu "Prepend non-hexdump log message with function name"
 	depends on !LOG_FRONTEND
 
 config LOG_FUNC_NAME_PREFIX_ERR
@@ -424,6 +424,26 @@ config LOG_BACKEND_RTT_FORCE_PRINTK
 
 endif # LOG_BACKEND_RTT
 
+config LOG_BACKEND_SPINEL
+	bool "Enable OpenThread dedicated Spinel protocol backend"
+	depends on (OPENTHREAD_NCP_SPINEL_ON_UART_DEV_NAME!=UART_CONSOLE_ON_DEV_NAME || !LOG_BACKEND_UART)
+	depends on NET_L2_OPENTHREAD
+	help
+	  When enabled, backend will use OpenThread dedicated SPINEL protocol for logging.
+	  This protocol is byte oriented and wrapps given messages into serial frames.
+	  Backend should be enabled only to OpenThread purposes and when UART backend is disabled
+	  or works on antoher UART device to avoid interference.
+
+if LOG_BACKEND_SPINEL
+
+config LOG_BACKEND_SPINEL_BUFFER_SIZE
+	int "Size of reserved up-buffer for logger output."
+	default 64
+	help
+	  Specify reserved size of up-buffer used for logger output.
+
+endif # LOG_BACKEND_SPINEL
+
 config LOG_BACKEND_NATIVE_POSIX
 	bool "Enable native backend"
 	depends on ARCH_POSIX
@@ -494,6 +514,16 @@ config LOG_BACKEND_NET_SYST_ENABLE
 	depends on LOG_MIPI_SYST_ENABLE
 	help
 	  When enabled backend is using networking to output syst format logs.
+
+config LOG_BACKEND_NET_AUTOSTART
+	bool "Automatically start networking backend"
+	default y if NET_CONFIG_NEED_IPV4 || NET_CONFIG_NEED_IPV6
+	help
+	  When enabled automatically start the networking backend on
+	  application start. If no routes to the logging server are available
+	  on application startup, this must be set to n and the backend must be
+	  started by the application later on. Otherwise the logging
+	  thread might block.
 
 endif # LOG_BACKEND_NET
 

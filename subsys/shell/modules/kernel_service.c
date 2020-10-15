@@ -18,7 +18,7 @@
 static int cmd_kernel_version(const struct shell *shell,
 			      size_t argc, char **argv)
 {
-	u32_t version = sys_kernel_version_get();
+	uint32_t version = sys_kernel_version_get();
 
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
@@ -131,13 +131,13 @@ static void shell_stack_dump(const struct k_thread *thread, void *user_data)
 		      size, unused, size - unused, size, pcnt);
 }
 
-extern K_THREAD_STACK_ARRAY_DEFINE(z_interrupt_stacks, CONFIG_MP_NUM_CPUS,
+extern K_KERNEL_STACK_ARRAY_DEFINE(z_interrupt_stacks, CONFIG_MP_NUM_CPUS,
 				   CONFIG_ISR_STACK_SIZE);
 
 static int cmd_kernel_stacks(const struct shell *shell,
 			     size_t argc, char **argv)
 {
-	u8_t *buf;
+	uint8_t *buf;
 	size_t size, unused = 0;
 
 	ARG_UNUSED(argc);
@@ -149,8 +149,8 @@ static int cmd_kernel_stacks(const struct shell *shell,
 	 * stack buffers.
 	 */
 	for (int i = 0; i < CONFIG_MP_NUM_CPUS; i++) {
-		buf = Z_THREAD_STACK_BUFFER(z_interrupt_stacks[i]);
-		size = K_THREAD_STACK_SIZEOF(z_interrupt_stacks[i]);
+		buf = Z_KERNEL_STACK_BUFFER(z_interrupt_stacks[i]);
+		size = K_KERNEL_STACK_SIZEOF(z_interrupt_stacks[i]);
 
 		for (size_t i = 0; i < size; i++) {
 			if (buf[i] == 0xAAU) {

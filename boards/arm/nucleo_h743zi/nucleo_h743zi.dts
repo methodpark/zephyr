@@ -36,7 +36,7 @@
 		compatible = "pwm-leds";
 
 		red_pwm_led: red_pwm_led {
-			pwms = <&pwm12 1 4>;
+			pwms = <&pwm12 1 4 PWM_POLARITY_NORMAL>;
 		};
 	};
 
@@ -79,5 +79,9 @@
 };
 
 &adc1_2 {
+	status = "okay";
+};
+
+&rng {
 	status = "okay";
 };

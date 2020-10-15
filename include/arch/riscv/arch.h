@@ -17,6 +17,7 @@
 
 #include <arch/riscv/thread.h>
 #include <arch/riscv/exp.h>
+#include <arch/common/sys_bitops.h>
 #include <arch/common/sys_io.h>
 #include <arch/common/ffs.h>
 
@@ -90,13 +91,13 @@ extern "C" {
  * SOC-specific function to get the IRQ number generating the interrupt.
  * __soc_get_irq returns a bitfield of pending IRQs.
  */
-extern u32_t __soc_get_irq(void);
+extern uint32_t __soc_get_irq(void);
 
 void arch_irq_enable(unsigned int irq);
 void arch_irq_disable(unsigned int irq);
 int arch_irq_is_enabled(unsigned int irq);
 void arch_irq_priority_set(unsigned int irq, unsigned int prio);
-void z_irq_spurious(void *unused);
+void z_irq_spurious(const void *unused);
 
 #if defined(CONFIG_RISCV_HAS_PLIC)
 #define ARCH_IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p) \
@@ -160,9 +161,9 @@ static ALWAYS_INLINE void arch_nop(void)
 	__asm__ volatile("nop");
 }
 
-extern u32_t z_timer_cycle_get_32(void);
+extern uint32_t z_timer_cycle_get_32(void);
 
-static inline u32_t arch_k_cycle_get_32(void)
+static inline uint32_t arch_k_cycle_get_32(void)
 {
 	return z_timer_cycle_get_32();
 }
